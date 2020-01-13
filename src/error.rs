@@ -5,6 +5,7 @@ use std::io;
 pub enum Error {
     Io(io::Error),
     CannotUseLessStdin,
+    CannotParseTimestamp(String),
 }
 
 impl std::error::Error for Error {}
@@ -20,6 +21,9 @@ impl fmt::Display for Error {
         match self {
             Error::Io(error) => write!(f, "IO error: {}", error),
             Error::CannotUseLessStdin => write!(f, "Cannot open stdin stream for 'less' process"),
+            Error::CannotParseTimestamp(timestamp) => {
+                write!(f, "Cannot parse timestamp '{}'", timestamp)
+            }
         }
     }
 }
