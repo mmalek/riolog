@@ -6,6 +6,7 @@ pub enum Error {
     Io(io::Error),
     CannotUseLessStdin,
     CannotParseTimestamp(String),
+    InvalidCliOptionValue(String),
 }
 
 impl std::error::Error for Error {}
@@ -24,6 +25,11 @@ impl fmt::Display for Error {
             Error::CannotParseTimestamp(timestamp) => {
                 write!(f, "Cannot parse timestamp '{}'", timestamp)
             }
+            Error::InvalidCliOptionValue(opt) => write!(
+                f,
+                "Invalid value provided for command line option '{}'",
+                opt
+            ),
         }
     }
 }

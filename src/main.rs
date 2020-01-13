@@ -4,13 +4,16 @@ mod result;
 use crate::error::Error;
 use crate::result::Result;
 use chrono::NaiveDateTime;
-use clap::{App, Arg};
+use clap::{App, Arg, ArgMatches};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 
 const ARG_FILE_NAME: &str = "file-name";
-const ARG_NO_COLOR: &str = "no-color";
+const ARG_COLOR: &str = "color";
+const ARG_OUTPUT: &str = "output";
+const ARG_VALUES_TRUE: [&str; 3] = ["yes", "true", "on"];
+const ARG_VALUES_FALSE: [&str; 3] = ["no", "false", "off"];
 
 fn main() -> Result<()> {
     let matches = App::new("riolog")
@@ -22,48 +25,91 @@ fn main() -> Result<()> {
                 .index(1)
                 .required(true),
         )
-        .arg(Arg::with_name(ARG_NO_COLOR).help("turn off colorized output"))
+        .arg(Arg::with_name(ARG_COLOR)
+            .long(ARG_COLOR)
+            .short("c")
+            .value_name("yes/no")
+            .help("turn off colorized output. Default: 'yes' for interactive mode, 'no' for file output mode (-o)"))
+        .arg(Arg::with_name(ARG_OUTPUT)
+            .long(ARG_OUTPUT)
+            .short("o")
+            .value_name("FILE")
+            .help("write the log to the output file"))
         .get_matches();
 
-    let color_enabled = !matches.is_present(ARG_NO_COLOR);
+    let output_file = matches.value_of_os(ARG_OUTPUT);
 
-    let mut less_command = Command::new("less");
+    let color_enabled =
+        parse_bool_arg(&matches, ARG_COLOR)?.unwrap_or_else(|| output_file.is_none());
 
-    if color_enabled {
-        less_command.arg("-r");
-    }
-
-    let mut less_process = less_command
-        .stdin(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let filename = matches
+    let input_file_name = matches
         .value_of("file-name")
         .expect("missing \"file-name\" parameter");
 
-    let file = File::open(filename)?;
-    let mut reader = BufReader::new(file);
-    let mut less_stdin = less_process
-        .stdin
-        .as_mut()
-        .ok_or(Error::CannotUseLessStdin)?;
+    let input_file = File::open(input_file_name)?;
+    let mut reader = BufReader::new(input_file);
 
-    let res = if color_enabled {
-        parse_log_entries(&mut reader, &mut less_stdin)
+    if let Some(output_file) = output_file {
+        let output_file = File::create(output_file)?;
+        let mut writer = BufWriter::new(output_file);
+
+        if color_enabled {
+            parse_log_entries(&mut reader, &mut writer)?;
+        } else {
+            filter_escape_sequences(&mut reader, &mut writer)?;
+        }
     } else {
-        filter_escape_sequences(&mut reader, &mut less_stdin)
-    };
+        let mut less_command = Command::new("less");
 
-    match res {
-        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::BrokenPipe => (),
-        Err(error) => return Err(error),
-        Ok(()) => (),
-    };
+        if color_enabled {
+            less_command.arg("-r");
+        }
 
-    less_process.wait()?;
+        let mut less_process = less_command
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let mut less_stdin = less_process
+            .stdin
+            .as_mut()
+            .ok_or(Error::CannotUseLessStdin)?;
+
+        let res = if color_enabled {
+            parse_log_entries(&mut reader, &mut less_stdin)
+        } else {
+            filter_escape_sequences(&mut reader, &mut less_stdin)
+        };
+
+        ignore_broken_pipe(res)?;
+
+        less_process.wait()?;
+    }
 
     Ok(())
+}
+
+fn parse_bool_arg(matches: &ArgMatches, arg_name: &str) -> Result<Option<bool>> {
+    if let Some(value) = matches.value_of(ARG_COLOR) {
+        let value = value.to_lowercase();
+        if ARG_VALUES_TRUE.iter().any(|&v| v == value) {
+            Ok(Some(true))
+        } else if ARG_VALUES_FALSE.iter().any(|&v| v == value) {
+            Ok(Some(false))
+        } else {
+            Err(Error::InvalidCliOptionValue(arg_name.to_owned()))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
+    match result {
+        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(error) => Err(error),
+        Ok(()) => Ok(()),
+    }
 }
 
 fn filter_escape_sequences(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<()> {
