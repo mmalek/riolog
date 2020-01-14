@@ -126,7 +126,7 @@ fn copy_log_fast(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(
             break;
         }
 
-        let last_slice_is_empty = format_special_chars(buf, writer, ctr_char_is_next)?;
+        let last_slice_is_empty = format_special_chars(buf, writer, ctr_char_is_next, None)?;
 
         let consumed_bytes = buf.len();
         reader.consume(consumed_bytes);
@@ -141,6 +141,7 @@ fn format_special_chars(
     buf: &[u8],
     writer: &mut impl Write,
     mut ctr_char_is_next: bool,
+    eol_seq: Option<&[u8]>,
 ) -> Result<bool> {
     let mut last_slice_is_empty = false;
 
@@ -156,7 +157,7 @@ fn format_special_chars(
             }
         } else if ctr_char_is_next {
             match s[0] {
-                b'n' => writer.write_all(b"\n")?,
+                b'n' => writer.write_all(eol_seq.unwrap_or(b"\n"))?,
                 b't' => writer.write_all(b"\t")?,
                 b'\'' => writer.write_all(b"\'")?,
                 b'\"' => writer.write_all(b"\"")?,
@@ -190,7 +191,14 @@ fn copy_log_colored(
                 LogLevel::Fatal => writer.write_all(b"\x1B[91m")?,
             }
         }
-        format_special_chars(&entry.contents, writer, false)?;
+        let eol_seq = level.map(|level| match level {
+            LogLevel::Debug => &b"\x1B[0m\n\x1B[37m"[..],
+            LogLevel::Info => &b"\x1B[0m\n\x1B[97m"[..],
+            LogLevel::Warning => &b"\x1B[0m\n\x1B[33m"[..],
+            LogLevel::Critical => &b"\x1B[0m\n\x1B[31m"[..],
+            LogLevel::Fatal => &b"\x1B[0m\n\x1B[91m"[..],
+        });
+        format_special_chars(&entry.contents, writer, false, eol_seq)?;
         writer.write_all(b"\x1B[0m")?;
     }
 
