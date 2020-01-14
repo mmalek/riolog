@@ -1,9 +1,12 @@
 mod error;
+mod log_entry;
+mod log_entry_reader;
 mod result;
 
 use crate::error::Error;
+use crate::log_entry::{LogEntry, LogLevel};
+use crate::log_entry_reader::LogEntryReader;
 use crate::result::Result;
-use chrono::NaiveDateTime;
 use clap::{App, Arg, ArgMatches};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -54,9 +57,10 @@ fn main() -> Result<()> {
         let mut writer = BufWriter::new(output_file);
 
         if color_enabled {
-            parse_log_entries(&mut reader, &mut writer)?;
+            let reader = LogEntryReader::new(reader);
+            copy_log_colored(reader, &mut writer)?;
         } else {
-            filter_escape_sequences(&mut reader, &mut writer)?;
+            copy_log_fast(&mut reader, &mut writer)?;
         }
     } else {
         let mut less_command = Command::new("less");
@@ -76,9 +80,10 @@ fn main() -> Result<()> {
             .ok_or(Error::CannotUseLessStdin)?;
 
         let res = if color_enabled {
-            parse_log_entries(&mut reader, &mut less_stdin)
+            let reader = LogEntryReader::new(reader);
+            copy_log_colored(reader, &mut less_stdin)
         } else {
-            filter_escape_sequences(&mut reader, &mut less_stdin)
+            copy_log_fast(&mut reader, &mut less_stdin)
         };
 
         ignore_broken_pipe(res)?;
@@ -112,7 +117,7 @@ fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
     }
 }
 
-fn filter_escape_sequences(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<()> {
+fn copy_log_fast(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<()> {
     let mut ctr_char_is_next = false;
 
     loop {
@@ -121,7 +126,7 @@ fn filter_escape_sequences(reader: &mut impl BufRead, writer: &mut impl Write) -
             break;
         }
 
-        let last_slice_is_empty = filter_escseq_and_write(buf, writer, ctr_char_is_next)?;
+        let last_slice_is_empty = format_special_chars(buf, writer, ctr_char_is_next)?;
 
         let consumed_bytes = buf.len();
         reader.consume(consumed_bytes);
@@ -132,7 +137,7 @@ fn filter_escape_sequences(reader: &mut impl BufRead, writer: &mut impl Write) -
     Ok(())
 }
 
-fn filter_escseq_and_write(
+fn format_special_chars(
     buf: &[u8],
     writer: &mut impl Write,
     mut ctr_char_is_next: bool,
@@ -170,52 +175,11 @@ fn filter_escseq_and_write(
     Ok(last_slice_is_empty)
 }
 
-enum LogLevel {
-    Debug,
-    Info,
-    Warning,
-    Critical,
-    Fatal,
-}
-
-struct LogEntry {
-    contents: Vec<u8>,
-}
-
-impl LogEntry {
-    fn level(&self) -> Option<LogLevel> {
-        self.contents
-            .iter()
-            .position(|&c| c == b'-')
-            .and_then(|pos| self.contents.get(pos + 1))
-            .and_then(|level| match level {
-                b'd' => Some(LogLevel::Debug),
-                b'i' => Some(LogLevel::Info),
-                b'w' => Some(LogLevel::Warning),
-                b'c' => Some(LogLevel::Critical),
-                b'f' => Some(LogLevel::Fatal),
-                _ => None,
-            })
-    }
-
-    fn timestamp(&self) -> Option<NaiveDateTime> {
-        self.contents
-            .iter()
-            .position(|&c| c == b'>')
-            .map(|pos| pos + 2)
-            .and_then(|pos| self.contents.get(pos..pos + 23))
-            .and_then(|input| parse_timestamp(input).ok())
-    }
-}
-
-fn parse_timestamp(input: &[u8]) -> Result<NaiveDateTime> {
-    let input = String::from_utf8_lossy(input);
-    NaiveDateTime::parse_from_str(&input, "%F %T.%3f")
-        .map_err(|_| Error::CannotParseTimestamp(input.to_string()))
-}
-
-fn parse_log_entries(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<()> {
-    while let Some(entry) = parse_log_entry(reader)? {
+fn copy_log_colored(
+    log_entries: impl Iterator<Item = LogEntry>,
+    writer: &mut impl Write,
+) -> Result<()> {
+    for entry in log_entries {
         let level = entry.level();
         if let Some(level) = &level {
             match level {
@@ -226,54 +190,24 @@ fn parse_log_entries(reader: &mut impl BufRead, writer: &mut impl Write) -> Resu
                 LogLevel::Fatal => writer.write_all(b"\x1B[91m")?,
             }
         }
-        filter_escseq_and_write(&entry.contents, writer, false)?;
+        format_special_chars(&entry.contents, writer, false)?;
         writer.write_all(b"\x1B[0m")?;
     }
 
     Ok(())
 }
 
-fn parse_log_entry(reader: &mut impl BufRead) -> Result<Option<LogEntry>> {
-    let mut contents = Vec::new();
-    loop {
-        let bytes_read = reader.read_until(b'\n', &mut contents)?;
-        // read until an empty line (might be '\n' or '\r\n')
-        if bytes_read <= 2 {
-            break;
-        }
-    }
-
-    if contents.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(LogEntry { contents }))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{NaiveDate, NaiveTime};
 
     #[test]
-    fn filter_escape_sequences_simple_test() {
+    fn copy_log_fast_simple_test() {
         let in_buf = b"abc\\ndef\\\\ghi".to_vec();
         let mut out_buf = Vec::<u8>::new();
 
-        filter_escape_sequences(&mut in_buf.as_slice(), &mut out_buf)
-            .expect("Error during log formatting");
+        copy_log_fast(&mut in_buf.as_slice(), &mut out_buf).expect("Error during log formatting");
 
         assert_eq!(out_buf, b"abc\ndef\\ghi");
-    }
-
-    #[test]
-    fn parse_timestamp_simple_test() {
-        assert_eq!(
-            parse_timestamp(b"2020-01-10 18:33:19.244").unwrap(),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2020, 01, 10),
-                NaiveTime::from_hms_milli(18, 33, 19, 244)
-            )
-        );
     }
 }
