@@ -6,7 +6,7 @@ pub enum Error {
     Io(io::Error),
     CannotUseLessStdin,
     CannotParseTimestamp(String),
-    InvalidCliOptionValue(String),
+    InvalidCliOptionValue(&'static str),
 }
 
 impl std::error::Error for Error {}

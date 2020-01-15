@@ -1,13 +1,15 @@
+use crate::date_time::parse_timestamp;
 use crate::error::Error;
 use crate::result::Result;
 use chrono::NaiveDateTime;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LogLevel {
-    Debug,
-    Info,
-    Warning,
-    Critical,
-    Fatal,
+    Debug = 0,
+    Info = 1,
+    Warning = 2,
+    Critical = 3,
+    Fatal = 4,
 }
 
 pub struct LogEntry {
@@ -40,25 +42,13 @@ impl LogEntry {
     }
 }
 
-fn parse_timestamp(input: &[u8]) -> Result<NaiveDateTime> {
-    let input = String::from_utf8_lossy(input);
-    NaiveDateTime::parse_from_str(&input, "%F %T.%3f")
-        .map_err(|_| Error::CannotParseTimestamp(input.to_string()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::{NaiveDate, NaiveTime};
-
-    #[test]
-    fn parse_timestamp_simple_test() {
-        assert_eq!(
-            parse_timestamp(b"2020-01-10 18:33:19.244").unwrap(),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2020, 01, 10),
-                NaiveTime::from_hms_milli(18, 33, 19, 244)
-            )
-        );
+pub fn parse_level_cli_option(input: &str, arg_name: &'static str) -> Result<LogLevel> {
+    match input.to_lowercase().as_str() {
+        "debug" => Ok(LogLevel::Debug),
+        "info" => Ok(LogLevel::Info),
+        "warning" => Ok(LogLevel::Warning),
+        "critical" => Ok(LogLevel::Critical),
+        "fatal" => Ok(LogLevel::Fatal),
+        _ => Err(Error::InvalidCliOptionValue(arg_name)),
     }
 }
