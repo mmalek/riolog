@@ -1,0 +1,41 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  build-unix:
+    name: Build on ${{ matrix.os }}
+    
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest]
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Run tests
+      run: cargo test --release --verbose
+    - name: Upload artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: riolog
+        path: target/release/riolog
+
+  build-windows:
+    name: Build on Windows
+    
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Run tests
+      run: cargo test --release --verbose
+    - name: Upload artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: riolog
+        path: target/release/riolog.exe
