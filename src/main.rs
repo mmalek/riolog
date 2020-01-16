@@ -27,7 +27,7 @@ const ARG_LEVEL: &str = "level";
 fn main() -> Result<()> {
     let matches = App::new("riolog")
         .version("0.1")
-        .about("Hi-Fi log parser")
+        .about("RIO log filter & viewer")
         .arg(
             Arg::with_name(ARG_FILE_NAME)
                 .help("path to a log file")
@@ -106,7 +106,7 @@ fn main() -> Result<()> {
         let mut less_command = Command::new("less");
 
         if color_enabled {
-            less_command.arg("-r");
+            less_command.arg("-R");
         }
 
         let mut less_process = less_command
@@ -260,11 +260,7 @@ fn copy_log_semantic(
                     }
                 }
             }
-            if color_enabled {
-                level
-            } else {
-                None
-            }
+            level.filter(|_| color_enabled)
         } else {
             None
         };
