@@ -14,7 +14,14 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 use subslice::SubsliceExt;
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{}", error);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let opts = Options::read()?;
 
     let input_file = File::open(&opts.input_file)?;
