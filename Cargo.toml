@@ -1,9 +1,10 @@
 [package]
 name = "riolog"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Michał Małek <michalm@fastmail.fm>"]
 edition = "2018"
 
 [dependencies]
 chrono = '0.4.10'
 clap = '^2.32'
+subslice = '0.2.2'

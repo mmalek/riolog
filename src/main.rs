@@ -12,6 +12,7 @@ use crate::result::Result;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
+use subslice::SubsliceExt;
 
 fn main() -> Result<()> {
     let opts = Options::read()?;
@@ -136,6 +137,7 @@ fn copy_log_semantic(
         mut time_from,
         time_to,
         min_level,
+        contains,
         ..
     }: Options,
 ) -> Result<()> {
@@ -172,6 +174,12 @@ fn copy_log_semantic(
         } else {
             None
         };
+
+        if let Some(contains) = &contains {
+            if entry.contents.find(contains.as_ref()).is_none() {
+                continue;
+            }
+        }
 
         if let Some(level) = &level {
             match level {
