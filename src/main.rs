@@ -1,111 +1,38 @@
-mod date_time;
+mod cli;
 mod error;
 mod log_entry;
 mod log_entry_reader;
 mod result;
 
-use crate::date_time::parse_date_time_cli_option;
+use crate::cli::Options;
 use crate::error::Error;
-use crate::log_entry::{parse_level_cli_option, LogEntry, LogLevel};
+use crate::log_entry::{LogEntry, LogLevel};
 use crate::log_entry_reader::LogEntryReader;
 use crate::result::Result;
-use chrono::NaiveDateTime;
-use clap::{App, Arg, ArgMatches};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 
-const ARG_FILE_NAME: &str = "file-name";
-const ARG_COLOR: &str = "color";
-const ARG_OUTPUT: &str = "output";
-const ARG_VALUES_TRUE: [&str; 3] = ["yes", "true", "on"];
-const ARG_VALUES_FALSE: [&str; 3] = ["no", "false", "off"];
-const ARG_TIME_FROM: &str = "from";
-const ARG_TIME_TO: &str = "to";
-const ARG_LEVEL: &str = "level";
-
 fn main() -> Result<()> {
-    let matches = App::new("riolog")
-        .version("0.1")
-        .about("RIO log filter & viewer")
-        .arg(
-            Arg::with_name(ARG_FILE_NAME)
-                .help("path to a log file")
-                .index(1)
-                .required(true),
-        )
-        .arg(Arg::with_name(ARG_COLOR)
-            .long(ARG_COLOR)
-            .short("c")
-            .value_name("yes/no")
-            .help("turn off colorized output. Default: 'yes' for interactive mode, 'no' for file output mode (-o)"))
-        .arg(Arg::with_name(ARG_OUTPUT)
-            .long(ARG_OUTPUT)
-            .short("o")
-            .value_name("FILE")
-            .help("write the log to the output file"))
-        .arg(Arg::with_name(ARG_TIME_FROM)
-            .long(ARG_TIME_FROM)
-            .value_name("DATE_TIME")
-            .help("show only entries later than provided date/time. Accepted formats: \"2020-01-10\", \"2020-01-10 18:00\", \"2020-01-10 18:33:19\""))
-        .arg(Arg::with_name(ARG_TIME_TO)
-            .long(ARG_TIME_TO)
-            .value_name("DATE_TIME")
-            .help("show only entries earlier than provided date/time. Accepted formats: \"2020-01-10\", \"2020-01-10 18:00\", \"2020-01-10 18:33:19\""))
-        .arg(Arg::with_name(ARG_LEVEL)
-            .long(ARG_LEVEL)
-            .value_name("NAME")
-            .help("show only entries with equal or higher level. Allowed values: debug, info, warning, critical, fatal"))
-        .get_matches();
+    let opts = Options::read()?;
 
-    let output_file = matches.value_of_os(ARG_OUTPUT);
-
-    let color_enabled =
-        parse_bool_arg(&matches, ARG_COLOR)?.unwrap_or_else(|| output_file.is_none());
-
-    let time_from = matches
-        .value_of(ARG_TIME_FROM)
-        .map(|input| parse_date_time_cli_option(input, ARG_TIME_FROM))
-        .transpose()?;
-
-    let time_to = matches
-        .value_of(ARG_TIME_TO)
-        .map(|input| parse_date_time_cli_option(input, ARG_TIME_TO))
-        .transpose()?;
-
-    let level = matches
-        .value_of(ARG_LEVEL)
-        .map(|input| parse_level_cli_option(input, ARG_TIME_TO))
-        .transpose()?;
-
-    let input_file_name = matches
-        .value_of("file-name")
-        .expect("missing \"file-name\" parameter");
-
-    let input_file = File::open(input_file_name)?;
+    let input_file = File::open(&opts.input_file)?;
     let mut reader = BufReader::new(input_file);
 
-    if let Some(output_file) = output_file {
+    if let Some(output_file) = &opts.output_file {
         let output_file = File::create(output_file)?;
         let mut writer = BufWriter::new(output_file);
 
-        if color_enabled || time_from.is_some() || time_to.is_some() || level.is_some() {
+        if opts.is_filtering_or_coloring() {
             let reader = LogEntryReader::new(reader);
-            copy_log_semantic(
-                reader,
-                &mut writer,
-                color_enabled,
-                time_from,
-                time_to,
-                level,
-            )?;
+            copy_log_semantic(reader, &mut writer, opts)?;
         } else {
             copy_log_fast(&mut reader, &mut writer)?;
         }
     } else {
         let mut less_command = Command::new("less");
 
-        if color_enabled {
+        if opts.color_enabled {
             less_command.arg("-R");
         }
 
@@ -119,16 +46,9 @@ fn main() -> Result<()> {
             .as_mut()
             .ok_or(Error::CannotUseLessStdin)?;
 
-        let res = if color_enabled || time_from.is_some() || time_to.is_some() || level.is_some() {
+        let res = if opts.is_filtering_or_coloring() {
             let reader = LogEntryReader::new(reader);
-            copy_log_semantic(
-                reader,
-                &mut less_stdin,
-                color_enabled,
-                time_from,
-                time_to,
-                level,
-            )
+            copy_log_semantic(reader, &mut less_stdin, opts)
         } else {
             copy_log_fast(&mut reader, &mut less_stdin)
         };
@@ -139,21 +59,6 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn parse_bool_arg(matches: &ArgMatches, arg_name: &'static str) -> Result<Option<bool>> {
-    if let Some(value) = matches.value_of(ARG_COLOR) {
-        let value = value.to_lowercase();
-        if ARG_VALUES_TRUE.iter().any(|&v| v == value) {
-            Ok(Some(true))
-        } else if ARG_VALUES_FALSE.iter().any(|&v| v == value) {
-            Ok(Some(false))
-        } else {
-            Err(Error::InvalidCliOptionValue(arg_name))
-        }
-    } else {
-        Ok(None)
-    }
 }
 
 fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
@@ -226,10 +131,13 @@ fn format_special_chars(
 fn copy_log_semantic(
     log_entries: impl Iterator<Item = LogEntry>,
     writer: &mut impl Write,
-    color_enabled: bool,
-    mut time_from: Option<NaiveDateTime>,
-    time_to: Option<NaiveDateTime>,
-    level_filter: Option<LogLevel>,
+    Options {
+        color_enabled,
+        mut time_from,
+        time_to,
+        min_level,
+        ..
+    }: Options,
 ) -> Result<()> {
     for entry in log_entries {
         if time_from.is_some() || time_to.is_some() {
@@ -251,11 +159,11 @@ fn copy_log_semantic(
             }
         }
 
-        let level = if color_enabled || level_filter.is_some() {
+        let level = if color_enabled || min_level.is_some() {
             let level = entry.level();
-            if let Some(level_filter) = &level_filter {
+            if let Some(min_level) = &min_level {
                 if let Some(level) = &level {
-                    if (*level as i32) < (*level_filter as i32) {
+                    if (*level as i32) < (*min_level as i32) {
                         continue;
                     }
                 }

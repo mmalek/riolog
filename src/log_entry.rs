@@ -1,6 +1,3 @@
-use crate::date_time::parse_timestamp;
-use crate::error::Error;
-use crate::result::Result;
 use chrono::NaiveDateTime;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,17 +35,28 @@ impl LogEntry {
             .position(|&c| c == b'>')
             .map(|pos| pos + 2)
             .and_then(|pos| self.contents.get(pos..pos + 23))
-            .and_then(|input| parse_timestamp(input).ok())
+            .and_then(|input| parse_timestamp(input))
     }
 }
 
-pub fn parse_level_cli_option(input: &str, arg_name: &'static str) -> Result<LogLevel> {
-    match input.to_lowercase().as_str() {
-        "debug" => Ok(LogLevel::Debug),
-        "info" => Ok(LogLevel::Info),
-        "warning" => Ok(LogLevel::Warning),
-        "critical" => Ok(LogLevel::Critical),
-        "fatal" => Ok(LogLevel::Fatal),
-        _ => Err(Error::InvalidCliOptionValue(arg_name)),
+fn parse_timestamp(input: &[u8]) -> Option<NaiveDateTime> {
+    let input = String::from_utf8_lossy(input);
+    NaiveDateTime::parse_from_str(&input, "%F %T.%3f").ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, NaiveTime};
+
+    #[test]
+    fn parse_timestamp_simple_test() {
+        assert_eq!(
+            parse_timestamp(b"2020-01-10 18:33:19.244").unwrap(),
+            NaiveDateTime::new(
+                NaiveDate::from_ymd(2020, 01, 10),
+                NaiveTime::from_hms_milli(18, 33, 19, 244)
+            )
+        );
     }
 }

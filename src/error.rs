@@ -5,7 +5,6 @@ use std::io;
 pub enum Error {
     Io(io::Error),
     CannotUseLessStdin,
-    CannotParseTimestamp(String),
     InvalidCliOptionValue(&'static str),
 }
 
@@ -22,9 +21,6 @@ impl fmt::Display for Error {
         match self {
             Error::Io(error) => write!(f, "IO error: {}", error),
             Error::CannotUseLessStdin => write!(f, "Cannot open stdin stream for 'less' process"),
-            Error::CannotParseTimestamp(timestamp) => {
-                write!(f, "Cannot parse timestamp '{}'", timestamp)
-            }
             Error::InvalidCliOptionValue(opt) => write!(
                 f,
                 "Invalid value provided for command line option '{}'",
