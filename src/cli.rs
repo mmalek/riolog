@@ -1,8 +1,8 @@
-use crate::error::Error;
+use crate::error::Error::InvalidCliOptionValue;
 use crate::log_entry::LogLevel;
 use crate::result::Result;
 use chrono::{NaiveDate, NaiveDateTime};
-use clap::{App, Arg, ArgMatches};
+use clap::{App, Arg};
 use std::path::PathBuf;
 
 const ARG_FILE_NAME: &str = "file-name";
@@ -60,22 +60,25 @@ impl Options {
 
         let output_file = matches.value_of_os(ARG_OUTPUT).map(PathBuf::from);
 
-        let color_enabled =
-            parse_bool_arg(&matches, ARG_COLOR)?.unwrap_or_else(|| output_file.is_none());
+        let color_enabled = matches
+            .value_of(ARG_COLOR)
+            .map(|input| parse_bool_arg(input).ok_or(InvalidCliOptionValue(ARG_COLOR)))
+            .transpose()?
+            .unwrap_or_else(|| output_file.is_none());
 
         let time_from = matches
             .value_of(ARG_TIME_FROM)
-            .map(|input| parse_date_time_arg(input, ARG_TIME_FROM))
+            .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_TIME_FROM)))
             .transpose()?;
 
         let time_to = matches
             .value_of(ARG_TIME_TO)
-            .map(|input| parse_date_time_arg(input, ARG_TIME_TO))
+            .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_TIME_TO)))
             .transpose()?;
 
         let min_level = matches
             .value_of(ARG_LEVEL)
-            .map(|input| parse_level_arg(input, ARG_TIME_TO))
+            .map(|input| parse_level_arg(input).ok_or(InvalidCliOptionValue(ARG_LEVEL)))
             .transpose()?;
 
         let input_file = matches
@@ -101,38 +104,34 @@ impl Options {
     }
 }
 
-fn parse_bool_arg(matches: &ArgMatches, arg_name: &'static str) -> Result<Option<bool>> {
-    if let Some(value) = matches.value_of(ARG_COLOR) {
-        let value = value.to_lowercase();
-        if ARG_VALUES_TRUE.iter().any(|&v| v == value) {
-            Ok(Some(true))
-        } else if ARG_VALUES_FALSE.iter().any(|&v| v == value) {
-            Ok(Some(false))
-        } else {
-            Err(Error::InvalidCliOptionValue(arg_name))
-        }
+fn parse_bool_arg(input: &str) -> Option<bool> {
+    let value = input.to_lowercase();
+    if ARG_VALUES_TRUE.iter().any(|&v| v == value) {
+        Some(true)
+    } else if ARG_VALUES_FALSE.iter().any(|&v| v == value) {
+        Some(false)
     } else {
-        Ok(None)
+        None
     }
 }
 
-pub fn parse_level_arg(input: &str, arg_name: &'static str) -> Result<LogLevel> {
+pub fn parse_level_arg(input: &str) -> Option<LogLevel> {
     match input.to_lowercase().as_str() {
-        "debug" => Ok(LogLevel::Debug),
-        "info" => Ok(LogLevel::Info),
-        "warning" => Ok(LogLevel::Warning),
-        "critical" => Ok(LogLevel::Critical),
-        "fatal" => Ok(LogLevel::Fatal),
-        _ => Err(Error::InvalidCliOptionValue(arg_name)),
+        "debug" => Some(LogLevel::Debug),
+        "info" => Some(LogLevel::Info),
+        "warning" => Some(LogLevel::Warning),
+        "critical" => Some(LogLevel::Critical),
+        "fatal" => Some(LogLevel::Fatal),
+        _ => None,
     }
 }
 
-pub fn parse_date_time_arg(input: &str, arg_name: &'static str) -> Result<NaiveDateTime> {
+pub fn parse_date_time_arg(input: &str) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(&input, "%F %T.%3f")
         .or_else(|_| NaiveDateTime::parse_from_str(&input, "%F %T"))
         .or_else(|_| NaiveDateTime::parse_from_str(&input, "%F %R"))
         .or_else(|_| NaiveDate::parse_from_str(&input, "%F").map(|d| d.and_hms(0, 0, 0)))
-        .map_err(|_| Error::InvalidCliOptionValue(arg_name))
+        .ok()
 }
 
 #[cfg(test)]
@@ -143,7 +142,7 @@ mod tests {
     #[test]
     fn parse_date_time_arg_ymdhmsm() {
         assert_eq!(
-            parse_date_time_arg("2020-01-10 18:33:19.244", "arg").unwrap(),
+            parse_date_time_arg("2020-01-10 18:33:19.244").unwrap(),
             NaiveDate::from_ymd(2020, 01, 10).and_hms_milli(18, 33, 19, 244)
         );
     }
@@ -151,7 +150,7 @@ mod tests {
     #[test]
     fn parse_date_time_arg_ymdhms() {
         assert_eq!(
-            parse_date_time_arg("2020-01-10 18:33:19", "arg").unwrap(),
+            parse_date_time_arg("2020-01-10 18:33:19").unwrap(),
             NaiveDate::from_ymd(2020, 01, 10).and_hms(18, 33, 19)
         );
     }
@@ -159,7 +158,7 @@ mod tests {
     #[test]
     fn parse_date_time_arg_ymdhm() {
         assert_eq!(
-            parse_date_time_arg("2020-01-10 18:33", "arg").unwrap(),
+            parse_date_time_arg("2020-01-10 18:33").unwrap(),
             NaiveDate::from_ymd(2020, 01, 10).and_hms(18, 33, 0)
         );
     }
@@ -167,7 +166,7 @@ mod tests {
     #[test]
     fn parse_date_time_arg_ymd() {
         assert_eq!(
-            parse_date_time_arg("2020-01-10", "arg").unwrap(),
+            parse_date_time_arg("2020-01-10").unwrap(),
             NaiveDate::from_ymd(2020, 01, 10).and_hms(0, 0, 0)
         );
     }
