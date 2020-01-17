@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 const ARG_FILE_NAME: &str = "file-name";
 const ARG_COLOR: &str = "color";
+const ARG_WRAP: &str = "wrap";
 const ARG_OUTPUT: &str = "output";
 const ARG_VALUES_TRUE: [&str; 3] = ["yes", "true", "on"];
 const ARG_VALUES_FALSE: [&str; 3] = ["no", "false", "off"];
@@ -17,6 +18,7 @@ const ARG_CONTAINS: &str = "contains";
 
 pub struct Options {
     pub color_enabled: bool,
+    pub wrap: bool,
     pub time_from: Option<NaiveDateTime>,
     pub time_to: Option<NaiveDateTime>,
     pub contains: Option<String>,
@@ -40,7 +42,11 @@ impl Options {
                 .long(ARG_COLOR)
                 .short("c")
                 .value_name("yes/no")
-                .help("turn off colorized output. Default: 'yes' for interactive mode, 'no' for file output mode (-o)"))
+                .help("turn on/off colorized output. Default: 'yes' for interactive mode, 'no' for file output mode (-o)"))
+            .arg(Arg::with_name(ARG_WRAP)
+                .long(ARG_WRAP)
+                .value_name("yes/no")
+                .help("wrap long lines in interactive mode. Default: 'no'"))
             .arg(Arg::with_name(ARG_OUTPUT)
                 .long(ARG_OUTPUT)
                 .short("o")
@@ -72,6 +78,12 @@ impl Options {
             .transpose()?
             .unwrap_or_else(|| output_file.is_none());
 
+        let wrap = matches
+            .value_of(ARG_WRAP)
+            .map(|input| parse_bool_arg(input).ok_or(InvalidCliOptionValue(ARG_WRAP)))
+            .transpose()?
+            .unwrap_or(false);
+
         let time_from = matches
             .value_of(ARG_TIME_FROM)
             .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_TIME_FROM)))
@@ -96,6 +108,7 @@ impl Options {
 
         Ok(Options {
             color_enabled,
+            wrap,
             time_from,
             time_to,
             min_level,

@@ -44,6 +44,10 @@ fn run() -> Result<()> {
             less_command.arg("-R");
         }
 
+        if !opts.wrap {
+            less_command.arg("-S");
+        }
+
         let mut less_process = less_command
             .stdin(Stdio::piped())
             .stderr(Stdio::piped())
