@@ -9,6 +9,7 @@ pub enum LogLevel {
     Fatal = 4,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct LogEntry {
     pub contents: Vec<u8>,
 }
@@ -47,16 +48,32 @@ fn parse_timestamp(input: &[u8]) -> Option<NaiveDateTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{NaiveDate, NaiveTime};
+    use chrono::NaiveDate;
 
     #[test]
     fn parse_timestamp_simple_test() {
         assert_eq!(
             parse_timestamp(b"2020-01-10 18:33:19.244").unwrap(),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2020, 01, 10),
-                NaiveTime::from_hms_milli(18, 33, 19, 244)
-            )
+            NaiveDate::from_ymd(2020, 01, 10).and_hms_milli(18, 33, 19, 244)
+        );
+    }
+
+    #[test]
+    fn log_entry_level() {
+        let entry = LogEntry {
+            contents: b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec(),
+        };
+        assert_eq!(entry.level(), Some(LogLevel::Info));
+    }
+
+    #[test]
+    fn log_entry_timestamp() {
+        let entry = LogEntry {
+            contents: b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec(),
+        };
+        assert_eq!(
+            entry.timestamp(),
+            Some(NaiveDate::from_ymd(2020, 01, 01).and_hms(20, 0, 0))
         );
     }
 }
