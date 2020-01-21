@@ -5,7 +5,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use clap::{App, Arg};
 use std::path::PathBuf;
 
-const ARG_FILE_NAME: &str = "file-name";
+const ARG_FILE_NAMES: &str = "file-names";
 const ARG_COLOR: &str = "color";
 const ARG_WRAP: &str = "wrap";
 const ARG_OUTPUT: &str = "output";
@@ -23,7 +23,7 @@ pub struct Options {
     pub time_to: Option<NaiveDateTime>,
     pub contains: Option<String>,
     pub min_level: Option<LogLevel>,
-    pub input_file: PathBuf,
+    pub input_files: Vec<PathBuf>,
     pub output_file: Option<PathBuf>,
 }
 
@@ -33,9 +33,10 @@ impl Options {
             .version("1.0")
             .about("RIO log filter & viewer")
             .arg(
-                Arg::with_name(ARG_FILE_NAME)
-                    .help("path to a log file")
+                Arg::with_name(ARG_FILE_NAMES)
+                    .help("path to a log file(s)")
                     .index(1)
+                    .multiple(true)
                     .required(true),
             )
             .arg(Arg::with_name(ARG_COLOR)
@@ -101,10 +102,11 @@ impl Options {
 
         let contains = matches.value_of(ARG_CONTAINS).map(String::from);
 
-        let input_file = matches
-            .value_of_os("file-name")
+        let input_files = matches
+            .values_of_os(ARG_FILE_NAMES)
+            .expect("missing \"file-name\" parameter")
             .map(PathBuf::from)
-            .expect("missing \"file-name\" parameter");
+            .collect();
 
         Ok(Options {
             color_enabled,
@@ -113,7 +115,7 @@ impl Options {
             time_to,
             min_level,
             contains,
-            input_file,
+            input_files,
             output_file,
         })
     }

@@ -2,12 +2,14 @@ mod cli;
 mod error;
 mod log_entry;
 mod log_entry_reader;
+mod log_entry_reader_mux;
 mod result;
 
 use crate::cli::Options;
 use crate::error::Error;
 use crate::log_entry::{LogEntry, LogLevel};
 use crate::log_entry_reader::LogEntryReader;
+use crate::log_entry_reader_mux::LogEntryReaderMux;
 use crate::result::Result;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -24,19 +26,17 @@ fn main() {
 fn run() -> Result<()> {
     let opts = Options::read()?;
 
-    let input_file = File::open(&opts.input_file)?;
-    let mut reader = BufReader::new(input_file);
+    let mut readers = Vec::new();
+
+    for input_file in &opts.input_files {
+        let input_file = File::open(&input_file)?;
+        readers.push(BufReader::new(input_file));
+    }
 
     if let Some(output_file) = &opts.output_file {
         let output_file = File::create(output_file)?;
-        let mut writer = BufWriter::new(output_file);
-
-        if opts.is_filtering_or_coloring() {
-            let reader = LogEntryReader::new(reader);
-            copy_log_semantic(reader, &mut writer, opts)?;
-        } else {
-            copy_log_fast(&mut reader, &mut writer)?;
-        }
+        let writer = BufWriter::new(output_file);
+        read_log(readers, writer, opts)?;
     } else {
         let mut less_command = Command::new("less");
 
@@ -53,17 +53,12 @@ fn run() -> Result<()> {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let mut less_stdin = less_process
+        let less_stdin = less_process
             .stdin
             .as_mut()
             .ok_or(Error::CannotUseLessStdin)?;
 
-        let res = if opts.is_filtering_or_coloring() {
-            let reader = LogEntryReader::new(reader);
-            copy_log_semantic(reader, &mut less_stdin, opts)
-        } else {
-            copy_log_fast(&mut reader, &mut less_stdin)
-        };
+        let res = read_log(readers, less_stdin, opts);
 
         ignore_broken_pipe(res)?;
 
@@ -71,6 +66,23 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn read_log(mut readers: Vec<impl BufRead>, mut writer: impl Write, opts: Options) -> Result<()> {
+    if opts.is_filtering_or_coloring() || readers.len() != 1 {
+        let mut readers: Vec<_> = readers.into_iter().map(LogEntryReader::new).collect();
+
+        if readers.len() == 1 {
+            let reader = readers.pop().expect("No elements");
+            copy_log_semantic(reader, &mut writer, opts)
+        } else {
+            let reader = LogEntryReaderMux::new(readers);
+            copy_log_semantic(reader, &mut writer, opts)
+        }
+    } else {
+        let reader = readers.pop().expect("No elements");
+        copy_log_fast(reader, &mut writer)
+    }
 }
 
 fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
@@ -81,7 +93,7 @@ fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
     }
 }
 
-fn copy_log_fast(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<()> {
+fn copy_log_fast(mut reader: impl BufRead, mut writer: impl Write) -> Result<()> {
     let mut ctr_char_is_next = false;
 
     loop {
@@ -90,7 +102,7 @@ fn copy_log_fast(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(
             break;
         }
 
-        let last_slice_is_empty = format_special_chars(buf, writer, ctr_char_is_next, None)?;
+        let last_slice_is_empty = format_special_chars(buf, &mut writer, ctr_char_is_next, None)?;
 
         let consumed_bytes = buf.len();
         reader.consume(consumed_bytes);
@@ -142,7 +154,7 @@ fn format_special_chars(
 
 fn copy_log_semantic(
     log_entries: impl Iterator<Item = LogEntry>,
-    writer: &mut impl Write,
+    mut writer: impl Write,
     Options {
         color_enabled,
         mut time_from,
@@ -210,7 +222,7 @@ fn copy_log_semantic(
             LogLevel::Fatal => &b"\x1B[0m\n\x1B[91m"[..],
         });
 
-        format_special_chars(&entry.contents, writer, false, eol_seq)?;
+        format_special_chars(&entry.contents, &mut writer, false, eol_seq)?;
 
         if color_enabled {
             writer.write_all(b"\x1B[0m")?;

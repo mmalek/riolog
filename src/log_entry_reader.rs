@@ -38,7 +38,6 @@ impl<R: BufRead> Iterator for LogEntryReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
 
     #[test]
     fn log_entry_reader_single_line() {
