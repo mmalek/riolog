@@ -5,7 +5,7 @@ mod log_entry_reader;
 mod log_entry_reader_mux;
 mod result;
 
-use crate::cli::Options;
+use crate::cli::{FilteringOptions, Options};
 use crate::error::Error;
 use crate::log_entry::{LogEntry, LogLevel};
 use crate::log_entry_reader::LogEntryReader;
@@ -13,6 +13,7 @@ use crate::log_entry_reader_mux::LogEntryReaderMux;
 use crate::result::Result;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use subslice::SubsliceExt;
 
@@ -70,14 +71,18 @@ fn run() -> Result<()> {
 
 fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -> Result<()> {
     if opts.is_filtering_or_coloring() || readers.len() != 1 {
-        let mut readers: Vec<_> = readers.into_iter().map(LogEntryReader::new).collect();
+        let mut entry_iters: Vec<_> = readers
+            .into_iter()
+            .map(LogEntryReader::new)
+            .map(|reader| filtering_iter(reader, opts.filtering_options.clone()))
+            .collect();
 
-        if readers.len() == 1 {
-            let reader = readers.pop().expect("No elements");
-            copy_log_semantic(reader, writer, opts)
+        if entry_iters.len() == 1 {
+            let entry_iter = entry_iters.pop().expect("No elements");
+            copy_log_semantic(entry_iter, writer, opts.color_enabled, opts.input_files)
         } else {
-            let reader = LogEntryReaderMux::new(readers);
-            copy_log_semantic(reader, writer, opts)
+            let reader = LogEntryReaderMux::new(entry_iters);
+            copy_log_semantic(reader, writer, opts.color_enabled, opts.input_files)
         }
     } else {
         let reader = readers.pop().expect("No elements");
@@ -152,50 +157,64 @@ fn format_special_chars(
     Ok(last_slice_is_empty)
 }
 
-fn copy_log_semantic(
-    log_entries: impl Iterator<Item = LogEntry>,
-    mut writer: impl Write,
-    Options {
-        color_enabled,
+fn filtering_iter(
+    input: impl Iterator<Item = LogEntry>,
+    FilteringOptions {
         time_from,
         time_to,
         min_level,
         contains,
-        ..
-    }: Options,
-) -> Result<()> {
-    let log_entries = log_entries
-        .skip_while(|entry| {
+    }: FilteringOptions,
+) -> impl Iterator<Item = LogEntry> {
+    input
+        .skip_while(move |entry| {
             if let (Some(timestamp), Some(time_from)) = (entry.timestamp(), time_from) {
                 timestamp < time_from
             } else {
                 false
             }
         })
-        .take_while(|entry| {
+        .take_while(move |entry| {
             if let (Some(timestamp), Some(time_to)) = (entry.timestamp(), time_to) {
                 timestamp < time_to
             } else {
                 true
             }
         })
-        .filter(|entry| {
+        .filter(move |entry| {
             if let (Some(min_level), Some(level)) = (min_level, entry.level()) {
                 (level as i32) >= (min_level as i32)
             } else {
                 true
             }
         })
-        .filter(|entry| {
+        .filter(move |entry| {
             if let Some(contains) = &contains {
                 entry.contents().find(contains.as_ref()).is_some()
             } else {
                 true
             }
-        });
+        })
+}
 
+fn copy_log_semantic(
+    log_entries: impl Iterator<Item = LogEntry>,
+    mut writer: impl Write,
+    color_enabled: bool,
+    input_files: Vec<PathBuf>,
+) -> Result<()> {
     for entry in log_entries {
         let level = entry.level().filter(|_| color_enabled);
+
+        if input_files.len() > 1 {
+            if color_enabled {
+                writer.write_all(b"\x1B[36m")?;
+            }
+            write!(writer, "{}: ", input_files[entry.source()].display())?;
+            if color_enabled {
+                writer.write_all(b"\x1B[0m")?;
+            }
+        }
 
         if let Some(level) = &level {
             match level {

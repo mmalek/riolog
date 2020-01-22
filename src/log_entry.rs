@@ -21,6 +21,7 @@ pub struct LogEntry {
     contents: Vec<u8>,
     level: Cell<Cache<Option<LogLevel>>>,
     timestamp: Cell<Cache<Option<NaiveDateTime>>>,
+    source: usize, // index of log source the entry comes from
 }
 
 impl LogEntry {
@@ -29,7 +30,13 @@ impl LogEntry {
             contents,
             level: Cell::new(Cache::Empty),
             timestamp: Cell::new(Cache::Empty),
+            source: 0,
         }
+    }
+
+    pub fn with_source(mut self, source: usize) -> Self {
+        self.source = source;
+        self
     }
 
     pub fn contents(&self) -> &[u8] {
@@ -74,6 +81,10 @@ impl LogEntry {
             self.timestamp.set(Cache::Filled(timestamp));
             timestamp
         }
+    }
+
+    pub fn source(&self) -> usize {
+        self.source
     }
 }
 

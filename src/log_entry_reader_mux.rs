@@ -41,7 +41,7 @@ impl<I: Iterator<Item = LogEntry>> Iterator for LogEntryReaderMux<I> {
         if let Some((i, log_entry)) = item {
             let ret_log_entry = log_entry.take();
             *log_entry = self.input_iters[*i].next();
-            ret_log_entry
+            ret_log_entry.map(|e| e.with_source(*i))
         } else {
             None
         }

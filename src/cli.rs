@@ -16,15 +16,21 @@ const ARG_TIME_TO: &str = "to";
 const ARG_LEVEL: &str = "level";
 const ARG_CONTAINS: &str = "contains";
 
+#[derive(Clone)]
 pub struct Options {
     pub color_enabled: bool,
     pub wrap: bool,
+    pub filtering_options: FilteringOptions,
+    pub input_files: Vec<PathBuf>,
+    pub output_file: Option<PathBuf>,
+}
+
+#[derive(Clone)]
+pub struct FilteringOptions {
     pub time_from: Option<NaiveDateTime>,
     pub time_to: Option<NaiveDateTime>,
     pub contains: Option<String>,
     pub min_level: Option<LogLevel>,
-    pub input_files: Vec<PathBuf>,
-    pub output_file: Option<PathBuf>,
 }
 
 impl Options {
@@ -108,13 +114,17 @@ impl Options {
             .map(PathBuf::from)
             .collect();
 
-        Ok(Options {
-            color_enabled,
-            wrap,
+        let filtering_options = FilteringOptions {
             time_from,
             time_to,
             min_level,
             contains,
+        };
+
+        Ok(Options {
+            color_enabled,
+            wrap,
+            filtering_options,
             input_files,
             output_file,
         })
@@ -122,10 +132,10 @@ impl Options {
 
     pub fn is_filtering_or_coloring(&self) -> bool {
         self.color_enabled
-            || self.time_from.is_some()
-            || self.time_to.is_some()
-            || self.min_level.is_some()
-            || self.contains.is_some()
+            || self.filtering_options.time_from.is_some()
+            || self.filtering_options.time_to.is_some()
+            || self.filtering_options.min_level.is_some()
+            || self.filtering_options.contains.is_some()
     }
 }
 
