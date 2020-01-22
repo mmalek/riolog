@@ -68,20 +68,20 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn read_log(mut readers: Vec<impl BufRead>, mut writer: impl Write, opts: Options) -> Result<()> {
+fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -> Result<()> {
     if opts.is_filtering_or_coloring() || readers.len() != 1 {
         let mut readers: Vec<_> = readers.into_iter().map(LogEntryReader::new).collect();
 
         if readers.len() == 1 {
             let reader = readers.pop().expect("No elements");
-            copy_log_semantic(reader, &mut writer, opts)
+            copy_log_semantic(reader, writer, opts)
         } else {
             let reader = LogEntryReaderMux::new(readers);
-            copy_log_semantic(reader, &mut writer, opts)
+            copy_log_semantic(reader, writer, opts)
         }
     } else {
         let reader = readers.pop().expect("No elements");
-        copy_log_fast(reader, &mut writer)
+        copy_log_fast(reader, writer)
     }
 }
 
@@ -157,45 +157,44 @@ fn copy_log_semantic(
     mut writer: impl Write,
     Options {
         color_enabled,
-        mut time_from,
+        time_from,
         time_to,
         min_level,
         contains,
         ..
     }: Options,
 ) -> Result<()> {
+    let log_entries = log_entries
+        .skip_while(|entry| {
+            if let (Some(timestamp), Some(time_from)) = (entry.timestamp(), time_from) {
+                timestamp < time_from
+            } else {
+                false
+            }
+        })
+        .take_while(|entry| {
+            if let (Some(timestamp), Some(time_to)) = (entry.timestamp(), time_to) {
+                timestamp < time_to
+            } else {
+                true
+            }
+        })
+        .filter(|entry| {
+            if let (Some(min_level), Some(level)) = (min_level, entry.level()) {
+                (level as i32) >= (min_level as i32)
+            } else {
+                true
+            }
+        })
+        .filter(|entry| {
+            if let Some(contains) = &contains {
+                entry.contents().find(contains.as_ref()).is_some()
+            } else {
+                true
+            }
+        });
+
     for entry in log_entries {
-        if time_from.is_some() || time_to.is_some() {
-            if let Some(timestamp) = entry.timestamp() {
-                if let Some(time_f) = &time_from {
-                    if timestamp < *time_f {
-                        continue;
-                    } else {
-                        // Since entries are sorted we no longer
-                        // need to check this filter
-                        time_from = None;
-                    }
-                }
-                if let Some(time_to) = &time_to {
-                    if timestamp >= *time_to {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if let (Some(min_level), Some(level)) = (&min_level, &entry.level()) {
-            if (*level as i32) < (*min_level as i32) {
-                continue;
-            }
-        }
-
-        if let Some(contains) = &contains {
-            if entry.contents().find(contains.as_ref()).is_none() {
-                continue;
-            }
-        }
-
         let level = entry.level().filter(|_| color_enabled);
 
         if let Some(level) = &level {
