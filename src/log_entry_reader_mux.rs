@@ -56,20 +56,12 @@ mod tests {
     #[test]
     fn log_entry_reader_mux() {
         let input1 = vec![
-            LogEntry {
-                contents: b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec(),
-            },
-            LogEntry {
-                contents: b"-info:<16866> 2020-01-01 21:00:00.000 UTC [A]: B".to_vec(),
-            },
+            LogEntry::new(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec()),
+            LogEntry::new(b"-info:<16866> 2020-01-01 21:00:00.000 UTC [A]: B".to_vec()),
         ];
         let input2 = vec![
-            LogEntry {
-                contents: b"-info:<16866> 2020-01-01 20:30:00.000 UTC [A]: B".to_vec(),
-            },
-            LogEntry {
-                contents: b"-info:<16866> 2020-01-01 21:30:00.000 UTC [A]: B".to_vec(),
-            },
+            LogEntry::new(b"-info:<16866> 2020-01-01 20:30:00.000 UTC [A]: B".to_vec()),
+            LogEntry::new(b"-info:<16866> 2020-01-01 21:30:00.000 UTC [A]: B".to_vec()),
         ];
 
         let iterators = vec![input1.into_iter(), input2.into_iter()];

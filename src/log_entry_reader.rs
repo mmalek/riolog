@@ -30,7 +30,7 @@ impl<R: BufRead> Iterator for LogEntryReader<R> {
         if contents.is_empty() {
             None
         } else {
-            Some(LogEntry { contents })
+            Some(LogEntry::new(contents))
         }
     }
 }
@@ -46,7 +46,7 @@ mod tests {
 
         let entry = reader.next().unwrap();
         assert_eq!(
-            entry.contents.as_slice(),
+            entry.contents(),
             &b"-info:<16866> 2020-01-13 20:08:18.476 UTC [Category]: Contents of single line entry\n"[..]);
 
         assert_eq!(reader.next(), None);
@@ -60,7 +60,7 @@ mod tests {
 
         let entry = reader.next().unwrap();
         assert_eq!(
-            entry.contents.as_slice(),
+            entry.contents(),
             &b"-info:<16866> 2020-01-13 20:08:18.476 UTC [Category]: Contents of single line entry"
                 [..]
         );
@@ -79,12 +79,12 @@ mod tests {
 
         let entry = reader.next().unwrap();
         assert_eq!(
-            entry.contents.as_slice(),
+            entry.contents(),
             &b"-info:<16866> 2020-01-13 20:08:18.476 UTC [Category]: Contents of single line entry\n\n"[..]);
 
         let entry = reader.next().unwrap();
         assert_eq!(
-            entry.contents.as_slice(),
+            entry.contents(),
             &b"-warning:<16866> 2020-01-13 20:09:18.476 UTC [Category]: The second line\n"[..]
         );
 

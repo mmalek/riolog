@@ -184,25 +184,19 @@ fn copy_log_semantic(
             }
         }
 
-        let level = if color_enabled || min_level.is_some() {
-            let level = entry.level();
-            if let Some(min_level) = &min_level {
-                if let Some(level) = &level {
-                    if (*level as i32) < (*min_level as i32) {
-                        continue;
-                    }
-                }
-            }
-            level.filter(|_| color_enabled)
-        } else {
-            None
-        };
-
-        if let Some(contains) = &contains {
-            if entry.contents.find(contains.as_ref()).is_none() {
+        if let (Some(min_level), Some(level)) = (&min_level, &entry.level()) {
+            if (*level as i32) < (*min_level as i32) {
                 continue;
             }
         }
+
+        if let Some(contains) = &contains {
+            if entry.contents().find(contains.as_ref()).is_none() {
+                continue;
+            }
+        }
+
+        let level = entry.level().filter(|_| color_enabled);
 
         if let Some(level) = &level {
             match level {
@@ -222,7 +216,7 @@ fn copy_log_semantic(
             LogLevel::Fatal => &b"\x1B[0m\n\x1B[91m"[..],
         });
 
-        format_special_chars(&entry.contents, &mut writer, false, eol_seq)?;
+        format_special_chars(entry.contents(), &mut writer, false, eol_seq)?;
 
         if color_enabled {
             writer.write_all(b"\x1B[0m")?;
