@@ -11,8 +11,8 @@ const ARG_WRAP: &str = "wrap";
 const ARG_OUTPUT: &str = "output";
 const ARG_VALUES_TRUE: [&str; 3] = ["yes", "true", "on"];
 const ARG_VALUES_FALSE: [&str; 3] = ["no", "false", "off"];
-const ARG_TIME_FROM: &str = "from";
-const ARG_TIME_TO: &str = "to";
+const ARG_SINCE: &str = "since";
+const ARG_UNTIL: &str = "until";
 const ARG_LEVEL: &str = "level";
 const ARG_CONTAINS: &str = "contains";
 
@@ -27,8 +27,8 @@ pub struct Options {
 
 #[derive(Clone)]
 pub struct FilteringOptions {
-    pub time_from: Option<NaiveDateTime>,
-    pub time_to: Option<NaiveDateTime>,
+    pub since: Option<NaiveDateTime>,
+    pub until: Option<NaiveDateTime>,
     pub contains: Option<String>,
     pub min_level: Option<LogLevel>,
 }
@@ -48,31 +48,35 @@ impl Options {
             .arg(Arg::with_name(ARG_COLOR)
                 .long(ARG_COLOR)
                 .short("c")
-                .value_name("yes/no")
-                .help("turn on/off colorized output. Default: 'yes' for interactive mode, 'no' for file output mode (-o)"))
+                .value_name("BOOLEAN")
+                .help("turn on/off colorized output. Default: enabled for interactive mode, disabled for file output mode (-o)"))
             .arg(Arg::with_name(ARG_WRAP)
                 .long(ARG_WRAP)
-                .value_name("yes/no")
-                .help("wrap long lines in interactive mode. Default: 'no'"))
+                .short("w")
+                .help("wrap long lines in interactive mode"))
             .arg(Arg::with_name(ARG_OUTPUT)
                 .long(ARG_OUTPUT)
                 .short("o")
                 .value_name("FILE")
                 .help("write the log to the output file"))
-            .arg(Arg::with_name(ARG_TIME_FROM)
-                .long(ARG_TIME_FROM)
+            .arg(Arg::with_name(ARG_SINCE)
+                .long(ARG_SINCE)
+                .short("S")
                 .value_name("DATE_TIME")
                 .help("show only entries later than provided date/time. Accepted formats: \"2020-01-10\", \"2020-01-10 18:00\", \"2020-01-10 18:33:19\""))
-            .arg(Arg::with_name(ARG_TIME_TO)
-                .long(ARG_TIME_TO)
+            .arg(Arg::with_name(ARG_UNTIL)
+                .long(ARG_UNTIL)
+                .short("U")
                 .value_name("DATE_TIME")
                 .help("show only entries earlier than provided date/time. Accepted formats: \"2020-01-10\", \"2020-01-10 18:00\", \"2020-01-10 18:33:19\""))
-                .arg(Arg::with_name(ARG_LEVEL)
-                    .long(ARG_LEVEL)
-                    .value_name("NAME")
-                    .help("show only entries with equal or higher level. Allowed values: debug, info, warning, critical, fatal"))
+            .arg(Arg::with_name(ARG_LEVEL)
+                .long(ARG_LEVEL)
+                .short("L")
+                .value_name("NAME")
+                .help("show only entries with equal or higher level. Allowed values: debug, info, warning, critical, fatal"))
             .arg(Arg::with_name(ARG_CONTAINS)
                 .long(ARG_CONTAINS)
+                .short("C")
                 .value_name("STRING")
                 .help("show only entries containing given string. Search is case-sensitive"))
             .get_matches();
@@ -85,20 +89,16 @@ impl Options {
             .transpose()?
             .unwrap_or_else(|| output_file.is_none());
 
-        let wrap = matches
-            .value_of(ARG_WRAP)
-            .map(|input| parse_bool_arg(input).ok_or(InvalidCliOptionValue(ARG_WRAP)))
-            .transpose()?
-            .unwrap_or(false);
+        let wrap = matches.is_present(ARG_WRAP);
 
-        let time_from = matches
-            .value_of(ARG_TIME_FROM)
-            .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_TIME_FROM)))
+        let since = matches
+            .value_of(ARG_SINCE)
+            .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_SINCE)))
             .transpose()?;
 
-        let time_to = matches
-            .value_of(ARG_TIME_TO)
-            .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_TIME_TO)))
+        let until = matches
+            .value_of(ARG_UNTIL)
+            .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_UNTIL)))
             .transpose()?;
 
         let min_level = matches
@@ -115,8 +115,8 @@ impl Options {
             .collect();
 
         let filtering_options = FilteringOptions {
-            time_from,
-            time_to,
+            since,
+            until,
             min_level,
             contains,
         };
@@ -132,8 +132,8 @@ impl Options {
 
     pub fn is_filtering_or_coloring(&self) -> bool {
         self.color_enabled
-            || self.filtering_options.time_from.is_some()
-            || self.filtering_options.time_to.is_some()
+            || self.filtering_options.since.is_some()
+            || self.filtering_options.until.is_some()
             || self.filtering_options.min_level.is_some()
             || self.filtering_options.contains.is_some()
     }

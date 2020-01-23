@@ -160,23 +160,23 @@ fn format_special_chars(
 fn filtering_iter(
     input: impl Iterator<Item = LogEntry>,
     FilteringOptions {
-        time_from,
-        time_to,
+        since,
+        until,
         min_level,
         contains,
     }: FilteringOptions,
 ) -> impl Iterator<Item = LogEntry> {
     input
         .skip_while(move |entry| {
-            if let (Some(timestamp), Some(time_from)) = (entry.timestamp(), time_from) {
-                timestamp < time_from
+            if let (Some(timestamp), Some(since)) = (entry.timestamp(), since) {
+                timestamp < since
             } else {
                 false
             }
         })
         .take_while(move |entry| {
-            if let (Some(timestamp), Some(time_to)) = (entry.timestamp(), time_to) {
-                timestamp < time_to
+            if let (Some(timestamp), Some(until)) = (entry.timestamp(), until) {
+                timestamp < until
             } else {
                 true
             }
