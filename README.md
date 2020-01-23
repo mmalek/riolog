@@ -14,9 +14,12 @@ Typical usage of `riolog` is to open log file from a terminal:
 ```
 $ riolog ls-2020-01-16_17-28-57.log
 ```
-By default `riolog` opens in an interactive mode using `less` as an user interface. `Riolog` shows contents of the log file and additionally:
-* replaces escaped control characters such as `\\n`, `\\t`, `\\"` with actual control codes
-* colors log entries differently for different log levels (debug, info, warning, critical, fatal)
-* filters log entries using multiple criteria (level, date/time)
 
-`Riolog` can also run in non-interactive mode by saving its output to a file.
+# Features
+* highlighting by priority level (debug - gray, info - white, warning - yellow, critical - red, fatal - bright red)
+* pretty-printing of log entries by replacing escaped control characters such as `\\n`, `\\t`, `\\"` with actual control codes
+* merging multiple log files into one view chronologically
+* filtering using multiple criteria (level, date/time, contents)
+* interactive scrolling using `less` as an user interface
+* non-interactive mode: saving to a file
+
