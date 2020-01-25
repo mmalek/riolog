@@ -95,8 +95,7 @@ fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -
 fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
     match result {
         Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-        Err(error) => Err(error),
-        Ok(()) => Ok(()),
+        result => result,
     }
 }
 
