@@ -30,12 +30,14 @@ fn run() -> Result<()> {
     let mut readers = Vec::new();
 
     for input_file in &opts.input_files {
-        let input_file = File::open(&input_file)?;
+        let input_file =
+            File::open(&input_file).map_err(|e| Error::CannotOpenFile(input_file.clone(), e))?;
         readers.push(BufReader::new(input_file));
     }
 
     if let Some(output_file) = &opts.output_file {
-        let output_file = File::create(output_file)?;
+        let output_file = File::create(output_file)
+            .map_err(|e| Error::CannotCreateFile(output_file.clone(), e))?;
         let writer = BufWriter::new(output_file);
         read_log(readers, writer, opts)?;
     } else {
