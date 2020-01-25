@@ -81,14 +81,14 @@ fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -
 
         if entry_iters.len() == 1 {
             let entry_iter = entry_iters.pop().expect("No elements");
-            copy_log_semantic(entry_iter, writer, opts.color_enabled, opts.input_files)
+            write_log(entry_iter, writer, opts.color_enabled, opts.input_files)
         } else {
             let reader = LogEntryReaderMux::new(entry_iters);
-            copy_log_semantic(reader, writer, opts.color_enabled, opts.input_files)
+            write_log(reader, writer, opts.color_enabled, opts.input_files)
         }
     } else {
         let reader = readers.pop().expect("No elements");
-        copy_log_fast(reader, writer)
+        write_log_fast(reader, writer)
     }
 }
 
@@ -99,7 +99,7 @@ fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
     }
 }
 
-fn copy_log_fast(mut reader: impl BufRead, mut writer: impl Write) -> Result<()> {
+fn write_log_fast(mut reader: impl BufRead, mut writer: impl Write) -> Result<()> {
     let mut ctr_char_is_next = false;
 
     loop {
@@ -108,7 +108,8 @@ fn copy_log_fast(mut reader: impl BufRead, mut writer: impl Write) -> Result<()>
             break;
         }
 
-        let last_slice_is_empty = format_special_chars(buf, &mut writer, ctr_char_is_next, None)?;
+        let last_slice_is_empty =
+            format_special_chars(buf, &mut writer, ctr_char_is_next, b"", b"")?;
 
         let consumed_bytes = buf.len();
         reader.consume(consumed_bytes);
@@ -123,7 +124,8 @@ fn format_special_chars(
     buf: &[u8],
     writer: &mut impl Write,
     mut ctr_char_is_next: bool,
-    eol_seq: Option<&[u8]>,
+    before_eol: &[u8],
+    after_eol: &[u8],
 ) -> Result<bool> {
     let mut last_slice_is_empty = false;
 
@@ -139,7 +141,11 @@ fn format_special_chars(
             }
         } else if ctr_char_is_next {
             match s[0] {
-                b'n' => writer.write_all(eol_seq.unwrap_or(b"\n"))?,
+                b'n' => {
+                    writer.write_all(before_eol)?;
+                    writer.write_all(b"\n")?;
+                    writer.write_all(after_eol)?;
+                }
                 b't' => writer.write_all(b"\t")?,
                 b'\'' => writer.write_all(b"\'")?,
                 b'\"' => writer.write_all(b"\"")?,
@@ -198,47 +204,54 @@ fn filtering_iter(
         })
 }
 
-fn copy_log_semantic(
+const CODE_CYAN: &[u8; 5] = b"\x1B[36m";
+const CODE_GRAY: &[u8; 5] = b"\x1B[37m";
+const CODE_RED: &[u8; 5] = b"\x1B[31m";
+const CODE_RED_BRIGHT: &[u8; 5] = b"\x1B[91m";
+const CODE_WHITE: &[u8; 5] = b"\x1B[97m";
+const CODE_YELLOW: &[u8; 5] = b"\x1B[33m";
+const CODE_NORMAL: &[u8; 4] = b"\x1B[0m";
+
+fn write_log(
     log_entries: impl Iterator<Item = LogEntry>,
     mut writer: impl Write,
     color_enabled: bool,
     input_files: Vec<PathBuf>,
 ) -> Result<()> {
     for entry in log_entries {
-        let level = entry.level().filter(|_| color_enabled);
-
         if input_files.len() > 1 {
             if color_enabled {
-                writer.write_all(b"\x1B[36m")?;
+                writer.write_all(CODE_CYAN)?;
             }
             write!(writer, "{}: ", input_files[entry.source()].display())?;
             if color_enabled {
-                writer.write_all(b"\x1B[0m")?;
+                writer.write_all(CODE_NORMAL)?;
             }
         }
 
-        if let Some(level) = &level {
-            match level {
-                LogLevel::Debug => writer.write_all(b"\x1B[37m")?,
-                LogLevel::Info => writer.write_all(b"\x1B[97m")?,
-                LogLevel::Warning => writer.write_all(b"\x1B[33m")?,
-                LogLevel::Critical => writer.write_all(b"\x1B[31m")?,
-                LogLevel::Fatal => writer.write_all(b"\x1B[91m")?,
-            }
-        }
+        let level = if color_enabled { entry.level() } else { None };
 
-        let eol_seq = level.map(|level| match level {
-            LogLevel::Debug => &b"\x1B[0m\n\x1B[37m"[..],
-            LogLevel::Info => &b"\x1B[0m\n\x1B[97m"[..],
-            LogLevel::Warning => &b"\x1B[0m\n\x1B[33m"[..],
-            LogLevel::Critical => &b"\x1B[0m\n\x1B[31m"[..],
-            LogLevel::Fatal => &b"\x1B[0m\n\x1B[91m"[..],
-        });
+        let color_code: &[u8] = match level {
+            Some(LogLevel::Debug) => CODE_GRAY,
+            Some(LogLevel::Info) => CODE_WHITE,
+            Some(LogLevel::Warning) => CODE_YELLOW,
+            Some(LogLevel::Critical) => CODE_RED,
+            Some(LogLevel::Fatal) => CODE_RED_BRIGHT,
+            None => b"",
+        };
 
-        format_special_chars(entry.contents(), &mut writer, false, eol_seq)?;
+        writer.write_all(color_code)?;
+
+        format_special_chars(
+            entry.contents(),
+            &mut writer,
+            false,
+            CODE_NORMAL,
+            color_code,
+        )?;
 
         if color_enabled {
-            writer.write_all(b"\x1B[0m")?;
+            writer.write_all(CODE_NORMAL)?;
         }
     }
 
@@ -250,11 +263,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn copy_log_fast_simple_test() {
+    fn write_log_fast_simple_test() {
         let in_buf = b"abc\\ndef\\\\ghi".to_vec();
         let mut out_buf = Vec::<u8>::new();
 
-        copy_log_fast(&mut in_buf.as_slice(), &mut out_buf).expect("Error during log formatting");
+        write_log_fast(&mut in_buf.as_slice(), &mut out_buf).expect("Error during log formatting");
 
         assert_eq!(out_buf, b"abc\ndef\\ghi");
     }
