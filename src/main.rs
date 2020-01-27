@@ -272,82 +272,90 @@ mod tests {
     use super::*;
 
     #[test]
-    fn write_log_fast_simple_test() {
+    fn write_log_fast_simple_test() -> Result<()> {
         let in_buf = b"abc\\ndef\\\\ghi".to_vec();
         let mut out_buf = Vec::<u8>::new();
 
-        write_log_fast(&mut in_buf.as_slice(), &mut out_buf).expect("Error during log formatting");
+        write_log_fast(&mut in_buf.as_slice(), &mut out_buf)?;
 
         assert_eq!(out_buf, b"abc\ndef\\ghi");
+
+        Ok(())
     }
 
     #[test]
-    fn format_special_chars_plain() {
+    fn format_special_chars_plain() -> Result<()> {
         let in_buf = b"abcdefg";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
-            .expect("Error during writing to out_buf");
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, in_buf);
+
+        Ok(())
     }
 
     #[test]
-    fn format_special_chars_special_chars() {
+    fn format_special_chars_special_chars() -> Result<()> {
         let in_buf = b"a\\nb\\tc\\\'d\\\"e\\\\fg";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
-            .expect("Error during writing to out_buf");
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, b"a\nb\tc\'d\"e\\fg");
+
+        Ok(())
     }
 
     #[test]
-    fn format_special_chars_unknown_special_chars() {
+    fn format_special_chars_unknown_special_chars() -> Result<()> {
         let in_buf = b"a\\ab\\bc\\cd";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
-            .expect("Error during writing to out_buf");
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, in_buf);
+
+        Ok(())
     }
 
     #[test]
-    fn format_special_chars_slash_eol() {
+    fn format_special_chars_slash_eol() -> Result<()> {
         let in_buf = b"abc\\";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
-            .expect("Error during writing to out_buf");
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
 
         assert_eq!(last_slice_is_empty, true);
         assert_eq!(out_buf, b"abc");
+
+        Ok(())
     }
 
     #[test]
-    fn format_special_chars_ctr_char_is_next() {
+    fn format_special_chars_ctr_char_is_next() -> Result<()> {
         let in_buf = b"nabc";
         let mut out_buf = Vec::<u8>::new();
         let ctr_char_is_next = true;
         let last_slice_is_empty =
-            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")
-                .expect("Error during writing to out_buf");
+            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, b"\nabc");
+
+        Ok(())
     }
 
     #[test]
-    fn format_special_chars_ctr_char_is_next_slash() {
+    fn format_special_chars_ctr_char_is_next_slash() -> Result<()> {
         let in_buf = b"\\abc";
         let mut out_buf = Vec::<u8>::new();
         let ctr_char_is_next = true;
         let last_slice_is_empty =
-            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")
-                .expect("Error during writing to out_buf");
+            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, b"\\abc");
+
+        Ok(())
     }
 }
