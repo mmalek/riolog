@@ -132,29 +132,38 @@ fn format_special_chars(
     for s in buf.split(|&c| c == b'\\') {
         if s.is_empty() {
             if ctr_char_is_next {
-                writer.write_all(b"\\")?;
                 last_slice_is_empty = true;
                 ctr_char_is_next = false;
             } else {
+                writer.write_all(b"\\")?;
                 last_slice_is_empty = false;
                 ctr_char_is_next = true;
             }
         } else if ctr_char_is_next {
             match s[0] {
+                b'0' => writer.write_all(b"\0")?,
                 b'n' => {
                     writer.write_all(before_eol)?;
                     writer.write_all(b"\n")?;
                     writer.write_all(after_eol)?;
                 }
+                b'r' => writer.write_all(b"\r")?,
                 b't' => writer.write_all(b"\t")?,
+                b'?' => writer.write_all(b"?")?,
                 b'\'' => writer.write_all(b"\'")?,
                 b'\"' => writer.write_all(b"\"")?,
-                _ => {}
+                _ => {
+                    writer.write_all(b"\\")?;
+                    writer.write_all(&s[0..1])?;
+                }
             }
             writer.write_all(&s[1..])?;
             last_slice_is_empty = false;
             ctr_char_is_next = true;
         } else {
+            if last_slice_is_empty {
+                writer.write_all(b"\\")?;
+            }
             writer.write_all(s)?;
             last_slice_is_empty = false;
             ctr_char_is_next = true;
@@ -270,5 +279,75 @@ mod tests {
         write_log_fast(&mut in_buf.as_slice(), &mut out_buf).expect("Error during log formatting");
 
         assert_eq!(out_buf, b"abc\ndef\\ghi");
+    }
+
+    #[test]
+    fn format_special_chars_plain() {
+        let in_buf = b"abcdefg";
+        let mut out_buf = Vec::<u8>::new();
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
+            .expect("Error during writing to out_buf");
+
+        assert_eq!(last_slice_is_empty, false);
+        assert_eq!(out_buf, in_buf);
+    }
+
+    #[test]
+    fn format_special_chars_special_chars() {
+        let in_buf = b"a\\nb\\tc\\\'d\\\"e\\\\fg";
+        let mut out_buf = Vec::<u8>::new();
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
+            .expect("Error during writing to out_buf");
+
+        assert_eq!(last_slice_is_empty, false);
+        assert_eq!(out_buf, b"a\nb\tc\'d\"e\\fg");
+    }
+
+    #[test]
+    fn format_special_chars_unknown_special_chars() {
+        let in_buf = b"a\\ab\\bc\\cd";
+        let mut out_buf = Vec::<u8>::new();
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
+            .expect("Error during writing to out_buf");
+
+        assert_eq!(last_slice_is_empty, false);
+        assert_eq!(out_buf, in_buf);
+    }
+
+    #[test]
+    fn format_special_chars_slash_eol() {
+        let in_buf = b"abc\\";
+        let mut out_buf = Vec::<u8>::new();
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")
+            .expect("Error during writing to out_buf");
+
+        assert_eq!(last_slice_is_empty, true);
+        assert_eq!(out_buf, b"abc");
+    }
+
+    #[test]
+    fn format_special_chars_ctr_char_is_next() {
+        let in_buf = b"nabc";
+        let mut out_buf = Vec::<u8>::new();
+        let ctr_char_is_next = true;
+        let last_slice_is_empty =
+            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")
+                .expect("Error during writing to out_buf");
+
+        assert_eq!(last_slice_is_empty, false);
+        assert_eq!(out_buf, b"\nabc");
+    }
+
+    #[test]
+    fn format_special_chars_ctr_char_is_next_slash() {
+        let in_buf = b"\\abc";
+        let mut out_buf = Vec::<u8>::new();
+        let ctr_char_is_next = true;
+        let last_slice_is_empty =
+            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")
+                .expect("Error during writing to out_buf");
+
+        assert_eq!(last_slice_is_empty, false);
+        assert_eq!(out_buf, b"\\abc");
     }
 }
