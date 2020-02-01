@@ -25,13 +25,29 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    pub fn new(contents: Vec<u8>) -> LogEntry {
+    pub fn new() -> LogEntry {
+        LogEntry {
+            contents: Vec::new(),
+            level: Cell::new(Cache::Empty),
+            timestamp: Cell::new(Cache::Empty),
+            source: 0,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn from_contents(contents: Vec<u8>) -> LogEntry {
         LogEntry {
             contents,
             level: Cell::new(Cache::Empty),
             timestamp: Cell::new(Cache::Empty),
             source: 0,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.contents.clear();
+        self.level.set(Cache::Empty);
+        self.timestamp.set(Cache::Empty);
     }
 
     pub fn with_source(mut self, source: usize) -> Self {
@@ -41,6 +57,10 @@ impl LogEntry {
 
     pub fn contents(&self) -> &[u8] {
         self.contents.as_slice()
+    }
+
+    pub fn contents_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.contents
     }
 
     pub fn level(&self) -> Option<LogLevel> {
@@ -108,13 +128,15 @@ mod tests {
 
     #[test]
     fn log_entry_level() {
-        let entry = LogEntry::new(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec());
+        let entry =
+            LogEntry::from_contents(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec());
         assert_eq!(entry.level(), Some(LogLevel::Info));
     }
 
     #[test]
     fn log_entry_timestamp() {
-        let entry = LogEntry::new(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec());
+        let entry =
+            LogEntry::from_contents(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec());
         assert_eq!(
             entry.timestamp(),
             Some(NaiveDate::from_ymd(2020, 01, 01).and_hms(20, 0, 0))

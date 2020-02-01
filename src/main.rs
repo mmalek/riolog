@@ -19,6 +19,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use streaming_iterator::StreamingIterator;
 
 fn main() {
     if let Err(error) = run() {
@@ -78,7 +79,8 @@ fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -
     if opts.is_filtering_or_coloring() || readers.len() != 1 {
         let mut entry_iters: Vec<_> = readers
             .into_iter()
-            .map(LogEntryReader::new)
+            .enumerate()
+            .map(|(i, r)| LogEntryReader::new(r).with_source(i))
             .map(|reader| filtering_iter(reader, opts.filtering_options.clone()))
             .collect();
 
@@ -132,12 +134,12 @@ const CODE_YELLOW: &[u8; 5] = b"\x1B[33m";
 const CODE_NORMAL: &[u8; 4] = b"\x1B[0m";
 
 fn write_log(
-    log_entries: impl Iterator<Item = LogEntry>,
+    mut log_entries: impl StreamingIterator<Item = LogEntry>,
     mut writer: impl Write,
     color_enabled: bool,
     input_files: &[PathBuf],
 ) -> Result<()> {
-    for entry in log_entries {
+    while let Some(entry) = log_entries.next() {
         if input_files.len() > 1 {
             if color_enabled {
                 writer.write_all(CODE_CYAN)?;
@@ -265,13 +267,18 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
         contents.append(&mut LOREM_IPSUM.to_vec());
         contents.append(&mut b"\n\n".to_vec());
 
-        let entry = LogEntry::new(contents.clone());
-        let mut entries = vec![entry];
+        let entry = LogEntry::from_contents(contents.clone());
+        let entries = vec![entry];
         let input_files = [PathBuf::from("logname")];
 
         let mut out_buf = Vec::<u8>::new();
 
-        write_log(entries.drain(..), &mut out_buf, false, &input_files)?;
+        write_log(
+            streaming_iterator::convert(entries),
+            &mut out_buf,
+            false,
+            &input_files,
+        )?;
 
         let mut in_buf = Vec::new();
         in_buf.append(&mut contents);
@@ -286,20 +293,25 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
         contents1.append(&mut header(2020, 01, 13, 20, 42, 00));
         contents1.append(&mut LOREM_IPSUM.to_vec());
         contents1.append(&mut b"\n\n".to_vec());
-        let entry1 = LogEntry::new(contents1.clone());
+        let entry1 = LogEntry::from_contents(contents1.clone());
 
         let mut contents2 = Vec::new();
         contents2.append(&mut header(2020, 01, 13, 20, 43, 00));
         contents2.append(&mut ELEMENTUM_EU.to_vec());
         contents2.append(&mut b"\n\n".to_vec());
-        let entry2 = LogEntry::new(contents2.clone());
+        let entry2 = LogEntry::from_contents(contents2.clone());
 
-        let mut entries = vec![entry1, entry2];
+        let entries = vec![entry1, entry2];
         let input_files = [PathBuf::from("logname")];
 
         let mut out_buf = Vec::<u8>::new();
 
-        write_log(entries.drain(..), &mut out_buf, false, &input_files)?;
+        write_log(
+            streaming_iterator::convert(entries),
+            &mut out_buf,
+            false,
+            &input_files,
+        )?;
 
         let mut in_buf = Vec::new();
         in_buf.append(&mut contents1);

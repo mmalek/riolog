@@ -1,16 +1,17 @@
 use crate::cli::FilteringOptions;
 use crate::log_entry::LogEntry;
+use streaming_iterator::StreamingIterator;
 use subslice::SubsliceExt;
 
 pub fn filtering_iter(
-    input: impl Iterator<Item = LogEntry>,
+    input: impl StreamingIterator<Item = LogEntry>,
     FilteringOptions {
         since,
         until,
         min_level,
         contains,
     }: FilteringOptions,
-) -> impl Iterator<Item = LogEntry> {
+) -> impl StreamingIterator<Item = LogEntry> {
     input
         .skip_while(move |entry| {
             if let (Some(timestamp), Some(since)) = (entry.timestamp(), since) {

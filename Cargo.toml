@@ -8,3 +8,4 @@ edition = "2018"
 chrono = '0.4.10'
 clap = '^2.32'
 subslice = '0.2.2'
+streaming-iterator = '0.1.5'

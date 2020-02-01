@@ -1,46 +1,48 @@
 use crate::log_entry::LogEntry;
+use streaming_iterator::StreamingIterator;
 
-pub struct LogEntryReaderMux<I: Iterator<Item = LogEntry>> {
+pub struct LogEntryReaderMux<I: StreamingIterator<Item = LogEntry>> {
     input_iters: Vec<I>,
-    entries: Vec<LogEntry>,
+    curr: Option<usize>,
 }
 
-impl<I: Iterator<Item = LogEntry>> LogEntryReaderMux<I> {
-    pub fn new(mut input_iters: Vec<I>) -> Self {
-        let entries = input_iters
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(index, iter)| iter.next().map(|entry| entry.with_source(index)))
-            .collect();
+impl<I: StreamingIterator<Item = LogEntry>> LogEntryReaderMux<I> {
+    pub fn new(input_iters: Vec<I>) -> Self {
         LogEntryReaderMux {
             input_iters,
-            entries,
+            curr: None,
         }
     }
 }
 
-impl<I: Iterator<Item = LogEntry>> Iterator for LogEntryReaderMux<I> {
+impl<I: StreamingIterator<Item = LogEntry>> StreamingIterator for LogEntryReaderMux<I> {
     type Item = LogEntry;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = self
-            .entries
-            .iter_mut()
-            .enumerate()
-            .min_by_key(|(_, e)| e.timestamp());
-
-        if let Some((entries_index, log_entry)) = item {
-            let source = log_entry.source();
-            if let Some(mut entry) = self.input_iters[source].next() {
-                entry = entry.with_source(source);
-                std::mem::swap(log_entry, &mut entry);
-                Some(entry)
-            } else {
-                Some(self.entries.remove(entries_index))
+    fn advance(&mut self) {
+        if let Some(curr) = self.curr {
+            let curr_iter = &mut self.input_iters[curr];
+            curr_iter.advance();
+            if curr_iter.get().is_none() {
+                self.input_iters.remove(curr);
+                self.curr = None;
             }
         } else {
-            None
+            self.input_iters.iter_mut().for_each(|i| i.advance());
+            self.input_iters.retain(|i| i.get().is_some());
         }
+
+        self.curr = self
+            .input_iters
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, iter)| iter.get().expect("Finished iter called").timestamp())
+            .map(|(index, _)| index);
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        self.curr
+            .and_then(|idx| self.input_iters.get(idx))
+            .and_then(|iter| iter.get())
     }
 }
 
@@ -52,15 +54,22 @@ mod tests {
     #[test]
     fn log_entry_reader_mux() {
         let input1 = vec![
-            LogEntry::new(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec()),
-            LogEntry::new(b"-info:<16866> 2020-01-01 21:00:00.000 UTC [A]: B".to_vec()),
+            LogEntry::from_contents(b"-info:<16866> 2020-01-01 20:00:00.000 UTC [A]: B".to_vec())
+                .with_source(0),
+            LogEntry::from_contents(b"-info:<16866> 2020-01-01 21:00:00.000 UTC [A]: B".to_vec())
+                .with_source(0),
         ];
         let input2 = vec![
-            LogEntry::new(b"-info:<16866> 2020-01-01 20:30:00.000 UTC [A]: B".to_vec()),
-            LogEntry::new(b"-info:<16866> 2020-01-01 21:30:00.000 UTC [A]: B".to_vec()),
+            LogEntry::from_contents(b"-info:<16866> 2020-01-01 20:30:00.000 UTC [A]: B".to_vec())
+                .with_source(1),
+            LogEntry::from_contents(b"-info:<16866> 2020-01-01 21:30:00.000 UTC [A]: B".to_vec())
+                .with_source(1),
         ];
 
-        let iterators = vec![input1.into_iter(), input2.into_iter()];
+        let iterators = vec![
+            streaming_iterator::convert(input1),
+            streaming_iterator::convert(input2),
+        ];
         let mut reader = LogEntryReaderMux::new(iterators);
 
         assert_eq!(
