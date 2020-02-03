@@ -63,6 +63,7 @@ fn run() -> Result<()> {
         let less_stdin = less_process
             .stdin
             .as_mut()
+            .map(|w| BufWriter::new(w))
             .ok_or(Error::CannotUseLessStdin)?;
 
         let res = read_log(readers, less_stdin, opts);
