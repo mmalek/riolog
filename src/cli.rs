@@ -8,6 +8,7 @@ use std::path::PathBuf;
 const ARG_FILE_NAMES: &str = "file-names";
 const ARG_COLOR: &str = "color";
 const ARG_FORMATTING: &str = "formatting";
+const ARG_PAGER: &str = "pager";
 const ARG_WRAP: &str = "wrap";
 const ARG_OUTPUT: &str = "output";
 const ARG_VALUES_TRUE: [&str; 3] = ["yes", "true", "on"];
@@ -21,6 +22,7 @@ const ARG_CONTAINS: &str = "contains";
 pub struct Options {
     pub color_enabled: bool,
     pub formatting_enabled: bool,
+    pub pager: bool,
     pub wrap: bool,
     pub filtering_options: FilteringOptions,
     pub input_files: Vec<PathBuf>,
@@ -56,6 +58,10 @@ impl Options {
                 .long(ARG_FORMATTING)
                 .value_name("BOOLEAN")
                 .help("turn on/off special characters formatting. Default: true"))
+            .arg(Arg::with_name(ARG_PAGER)
+                .long(ARG_PAGER)
+                .value_name("BOOLEAN")
+                .help("turn on/off pager (using \"less\") for showing log. Default: true"))
             .arg(Arg::with_name(ARG_WRAP)
                 .long(ARG_WRAP)
                 .short("w")
@@ -101,6 +107,12 @@ impl Options {
             .transpose()?
             .unwrap_or(true);
 
+        let pager = matches
+            .value_of(ARG_PAGER)
+            .map(|input| parse_bool_arg(input).ok_or(InvalidCliOptionValue(ARG_PAGER)))
+            .transpose()?
+            .unwrap_or(true);
+
         let wrap = matches.is_present(ARG_WRAP);
 
         let since = matches
@@ -136,6 +148,7 @@ impl Options {
         Ok(Options {
             color_enabled,
             formatting_enabled,
+            pager,
             wrap,
             filtering_options,
             input_files,

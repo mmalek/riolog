@@ -42,11 +42,11 @@ fn run() -> Result<()> {
     }
 
     if let Some(output_file) = &opts.output_file {
-        let output_file = File::create(output_file)
+        let writer = File::create(output_file)
+            .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
             .map_err(|e| Error::CannotCreateFile(output_file.clone(), e))?;
-        let writer = BufWriter::with_capacity(IO_BUF_SIZE, output_file);
-        read_log(readers, writer, opts)?;
-    } else {
+        read_log(readers, writer, opts)
+    } else if opts.pager {
         let mut less_command = Command::new("less");
         less_command.arg("--quit-if-one-screen");
 
@@ -63,20 +63,24 @@ fn run() -> Result<()> {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let less_stdin = less_process
+        let writer = less_process
             .stdin
             .as_mut()
             .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
             .ok_or(Error::CannotUseLessStdin)?;
 
-        let res = read_log(readers, less_stdin, opts);
+        let res = read_log(readers, writer, opts);
 
         ignore_broken_pipe(res)?;
 
         less_process.wait()?;
-    }
 
-    Ok(())
+        Ok(())
+    } else {
+        let stdout = std::io::stdout();
+        let writer = BufWriter::with_capacity(IO_BUF_SIZE, stdout.lock());
+        ignore_broken_pipe(read_log(readers, writer, opts))
+    }
 }
 
 fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -> Result<()> {
