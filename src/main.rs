@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use streaming_iterator::StreamingIterator;
 
+const IO_BUF_SIZE: usize = 1024 * 1024;
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("{}", error);
@@ -36,13 +38,13 @@ fn run() -> Result<()> {
     for input_file in &opts.input_files {
         let input_file =
             File::open(&input_file).map_err(|e| Error::CannotOpenFile(input_file.clone(), e))?;
-        readers.push(BufReader::new(input_file));
+        readers.push(BufReader::with_capacity(IO_BUF_SIZE, input_file));
     }
 
     if let Some(output_file) = &opts.output_file {
         let output_file = File::create(output_file)
             .map_err(|e| Error::CannotCreateFile(output_file.clone(), e))?;
-        let writer = BufWriter::new(output_file);
+        let writer = BufWriter::with_capacity(IO_BUF_SIZE, output_file);
         read_log(readers, writer, opts)?;
     } else {
         let mut less_command = Command::new("less");
@@ -63,7 +65,7 @@ fn run() -> Result<()> {
         let less_stdin = less_process
             .stdin
             .as_mut()
-            .map(|w| BufWriter::new(w))
+            .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
             .ok_or(Error::CannotUseLessStdin)?;
 
         let res = read_log(readers, less_stdin, opts);
