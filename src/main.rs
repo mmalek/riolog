@@ -48,13 +48,14 @@ fn run() -> Result<()> {
         read_log(readers, writer, opts)?;
     } else {
         let mut less_command = Command::new("less");
+        less_command.arg("--quit-if-one-screen");
 
         if opts.color_enabled {
-            less_command.arg("-R");
+            less_command.arg("--RAW-CONTROL-CHARS");
         }
 
         if !opts.wrap {
-            less_command.arg("-S");
+            less_command.arg("--chop-long-lines");
         }
 
         let mut less_process = less_command
