@@ -87,14 +87,26 @@ fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -
 
         if entry_iters.len() == 1 {
             let entry_iter = entry_iters.pop().expect("No elements");
-            write_log(entry_iter, writer, opts.color_enabled, &opts.input_files)
+            write_log(
+                entry_iter,
+                writer,
+                opts.color_enabled,
+                opts.formatting_enabled,
+                &opts.input_files,
+            )
         } else {
             let reader = LogEntryReaderMux::new(entry_iters);
-            write_log(reader, writer, opts.color_enabled, &opts.input_files)
+            write_log(
+                reader,
+                writer,
+                opts.color_enabled,
+                opts.formatting_enabled,
+                &opts.input_files,
+            )
         }
     } else {
         let reader = readers.pop().expect("No elements");
-        write_log_fast(reader, writer)
+        write_log_fast(reader, writer, opts.formatting_enabled)
     }
 }
 
@@ -105,7 +117,11 @@ fn ignore_broken_pipe(result: Result<()>) -> Result<()> {
     }
 }
 
-fn write_log_fast(mut reader: impl BufRead, mut writer: impl Write) -> Result<()> {
+fn write_log_fast(
+    mut reader: impl BufRead,
+    mut writer: impl Write,
+    formatting: bool,
+) -> Result<()> {
     let mut ctr_char_is_next = false;
 
     loop {
@@ -114,13 +130,14 @@ fn write_log_fast(mut reader: impl BufRead, mut writer: impl Write) -> Result<()
             break;
         }
 
-        let last_slice_is_empty =
-            format_special_chars(buf, &mut writer, ctr_char_is_next, b"", b"")?;
+        if formatting {
+            ctr_char_is_next = format_special_chars(buf, &mut writer, ctr_char_is_next, b"", b"")?;
+        } else {
+            writer.write_all(buf)?;
+        }
 
         let consumed_bytes = buf.len();
         reader.consume(consumed_bytes);
-
-        ctr_char_is_next = last_slice_is_empty;
     }
 
     Ok(())
@@ -138,6 +155,7 @@ fn write_log(
     mut log_entries: impl StreamingIterator<Item = LogEntry>,
     mut writer: impl Write,
     color_enabled: bool,
+    formatting: bool,
     input_files: &[PathBuf],
 ) -> Result<()> {
     while let Some(entry) = log_entries.next() {
@@ -164,13 +182,17 @@ fn write_log(
 
         writer.write_all(color_code)?;
 
-        format_special_chars(
-            entry.contents(),
-            &mut writer,
-            false,
-            CODE_NORMAL,
-            color_code,
-        )?;
+        if formatting {
+            format_special_chars(
+                entry.contents(),
+                &mut writer,
+                false,
+                CODE_NORMAL,
+                color_code,
+            )?;
+        } else {
+            writer.write_all(entry.contents())?;
+        }
 
         if color_enabled {
             writer.write_all(CODE_NORMAL)?;
@@ -217,7 +239,7 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
         let in_buf = b"abc\\ndef\\\\ghi".to_vec();
         let mut out_buf = Vec::<u8>::new();
 
-        write_log_fast(&mut in_buf.as_slice(), &mut out_buf)?;
+        write_log_fast(&mut in_buf.as_slice(), &mut out_buf, true)?;
 
         assert_eq!(out_buf, b"abc\ndef\\ghi");
 
@@ -233,7 +255,7 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
 
         let mut out_buf = Vec::<u8>::new();
 
-        write_log_fast(&mut in_buf.as_slice(), &mut out_buf)?;
+        write_log_fast(&mut in_buf.as_slice(), &mut out_buf, true)?;
 
         assert_eq!(out_buf, in_buf);
 
@@ -254,7 +276,7 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
 
         let mut out_buf = Vec::<u8>::new();
 
-        write_log_fast(&mut in_buf.as_slice(), &mut out_buf)?;
+        write_log_fast(&mut in_buf.as_slice(), &mut out_buf, true)?;
 
         assert_eq!(out_buf, in_buf);
 
@@ -278,6 +300,7 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
             streaming_iterator::convert(entries),
             &mut out_buf,
             false,
+            true,
             &input_files,
         )?;
 
@@ -311,6 +334,7 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
             streaming_iterator::convert(entries),
             &mut out_buf,
             false,
+            true,
             &input_files,
         )?;
 

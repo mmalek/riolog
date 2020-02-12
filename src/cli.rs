@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 const ARG_FILE_NAMES: &str = "file-names";
 const ARG_COLOR: &str = "color";
+const ARG_FORMATTING: &str = "formatting";
 const ARG_WRAP: &str = "wrap";
 const ARG_OUTPUT: &str = "output";
 const ARG_VALUES_TRUE: [&str; 3] = ["yes", "true", "on"];
@@ -19,6 +20,7 @@ const ARG_CONTAINS: &str = "contains";
 #[derive(Clone)]
 pub struct Options {
     pub color_enabled: bool,
+    pub formatting_enabled: bool,
     pub wrap: bool,
     pub filtering_options: FilteringOptions,
     pub input_files: Vec<PathBuf>,
@@ -50,6 +52,10 @@ impl Options {
                 .short("c")
                 .value_name("BOOLEAN")
                 .help("turn on/off colorized output. Default: enabled for interactive mode, disabled for file output mode (-o)"))
+            .arg(Arg::with_name(ARG_FORMATTING)
+                .long(ARG_FORMATTING)
+                .value_name("BOOLEAN")
+                .help("turn on/off special characters formatting. Default: true"))
             .arg(Arg::with_name(ARG_WRAP)
                 .long(ARG_WRAP)
                 .short("w")
@@ -89,6 +95,12 @@ impl Options {
             .transpose()?
             .unwrap_or_else(|| output_file.is_none());
 
+        let formatting_enabled = matches
+            .value_of(ARG_FORMATTING)
+            .map(|input| parse_bool_arg(input).ok_or(InvalidCliOptionValue(ARG_FORMATTING)))
+            .transpose()?
+            .unwrap_or(true);
+
         let wrap = matches.is_present(ARG_WRAP);
 
         let since = matches
@@ -123,6 +135,7 @@ impl Options {
 
         Ok(Options {
             color_enabled,
+            formatting_enabled,
             wrap,
             filtering_options,
             input_files,
