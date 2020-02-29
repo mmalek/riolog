@@ -17,6 +17,7 @@ const ARG_SINCE: &str = "since";
 const ARG_UNTIL: &str = "until";
 const ARG_LEVEL: &str = "level";
 const ARG_CONTAINS: &str = "contains";
+const ARG_REVERSE: &str = "reverse";
 
 #[derive(Clone)]
 pub struct Options {
@@ -24,6 +25,7 @@ pub struct Options {
     pub formatting_enabled: bool,
     pub pager: bool,
     pub wrap: bool,
+    pub reverse: bool,
     pub filtering_options: FilteringOptions,
     pub input_files: Vec<PathBuf>,
     pub output_file: Option<PathBuf>,
@@ -66,6 +68,10 @@ impl Options {
                 .long(ARG_WRAP)
                 .short("w")
                 .help("wrap long lines in interactive mode"))
+            .arg(Arg::with_name(ARG_REVERSE)
+                .long(ARG_REVERSE)
+                .short("r")
+                .help("reverse output so that the newest entries are displayed first"))
             .arg(Arg::with_name(ARG_OUTPUT)
                 .long(ARG_OUTPUT)
                 .short("o")
@@ -115,6 +121,8 @@ impl Options {
 
         let wrap = matches.is_present(ARG_WRAP);
 
+        let reverse = matches.is_present(ARG_REVERSE);
+
         let since = matches
             .value_of(ARG_SINCE)
             .map(|input| parse_date_time_arg(input).ok_or(InvalidCliOptionValue(ARG_SINCE)))
@@ -150,6 +158,7 @@ impl Options {
             formatting_enabled,
             pager,
             wrap,
+            reverse,
             filtering_options,
             input_files,
             output_file,

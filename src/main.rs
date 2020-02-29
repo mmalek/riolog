@@ -15,6 +15,7 @@ use crate::log_entry::{LogEntry, LogLevel};
 use crate::log_entry_reader::LogEntryReader;
 use crate::log_entry_reader_mux::LogEntryReaderMux;
 use crate::result::Result;
+use rev_buf_reader::RevBufReader;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
@@ -33,14 +34,27 @@ fn main() {
 fn run() -> Result<()> {
     let opts = Options::read()?;
 
-    let mut readers = Vec::new();
+    let input_files = opts
+        .input_files
+        .iter()
+        .map(|f| File::open(&f).map_err(|e| Error::CannotOpenFile(f.clone(), e)));
 
-    for input_file in &opts.input_files {
-        let input_file =
-            File::open(&input_file).map_err(|e| Error::CannotOpenFile(input_file.clone(), e))?;
-        readers.push(BufReader::with_capacity(IO_BUF_SIZE, input_file));
+    if opts.reverse {
+        let readers: Result<Vec<_>> = input_files
+            .map(|f| f.map(|f| RevBufReader::with_capacity(IO_BUF_SIZE, f)))
+            .collect();
+
+        main_proc(opts, readers?)
+    } else {
+        let readers: Result<Vec<_>> = input_files
+            .map(|f| f.map(|f| BufReader::with_capacity(IO_BUF_SIZE, f)))
+            .collect();
+
+        main_proc(opts, readers?)
     }
+}
 
+fn main_proc(opts: Options, readers: Vec<impl BufRead>) -> Result<()> {
     if let Some(output_file) = &opts.output_file {
         let writer = File::create(output_file)
             .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
