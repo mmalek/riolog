@@ -5,7 +5,7 @@ pub fn format_special_chars(
     buf: &[u8],
     writer: &mut impl Write,
     mut ctr_char_is_next: bool,
-    before_eol: &[u8],
+    eol: &[u8],
     after_eol: &[u8],
 ) -> Result<bool> {
     let mut last_slice_is_empty = false;
@@ -24,11 +24,10 @@ pub fn format_special_chars(
             match s[0] {
                 b'0' => writer.write_all(b"\0")?,
                 b'n' => {
-                    writer.write_all(before_eol)?;
-                    writer.write_all(b"\n")?;
+                    writer.write_all(eol)?;
                     writer.write_all(after_eol)?;
                 }
-                b'r' => writer.write_all(b"\r")?,
+                b'r' => {}
                 b't' => writer.write_all(b"\t")?,
                 b'?' => writer.write_all(b"?")?,
                 b'\'' => writer.write_all(b"\'")?,
@@ -62,7 +61,7 @@ mod tests {
     fn format_special_chars_plain() -> Result<()> {
         let in_buf = b"abcdefg";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"\n", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, in_buf);
@@ -74,7 +73,7 @@ mod tests {
     fn format_special_chars_special_chars() -> Result<()> {
         let in_buf = b"a\\nb\\tc\\\'d\\\"e\\\\fg";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"\n", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, b"a\nb\tc\'d\"e\\fg");
@@ -86,7 +85,7 @@ mod tests {
     fn format_special_chars_unknown_special_chars() -> Result<()> {
         let in_buf = b"a\\ab\\bc\\cd";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"\n", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, in_buf);
@@ -98,7 +97,7 @@ mod tests {
     fn format_special_chars_slash_eol() -> Result<()> {
         let in_buf = b"abc\\";
         let mut out_buf = Vec::<u8>::new();
-        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"", b"")?;
+        let last_slice_is_empty = format_special_chars(in_buf, &mut out_buf, false, b"\n", b"")?;
 
         assert_eq!(last_slice_is_empty, true);
         assert_eq!(out_buf, b"abc");
@@ -112,7 +111,7 @@ mod tests {
         let mut out_buf = Vec::<u8>::new();
         let ctr_char_is_next = true;
         let last_slice_is_empty =
-            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")?;
+            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"\n", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, b"\nabc");
@@ -126,7 +125,7 @@ mod tests {
         let mut out_buf = Vec::<u8>::new();
         let ctr_char_is_next = true;
         let last_slice_is_empty =
-            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"", b"")?;
+            format_special_chars(in_buf, &mut out_buf, ctr_char_is_next, b"\n", b"")?;
 
         assert_eq!(last_slice_is_empty, false);
         assert_eq!(out_buf, b"\\abc");

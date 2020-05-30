@@ -1,4 +1,5 @@
 mod cli;
+mod eol;
 mod error;
 mod filtering;
 mod formatting;
@@ -17,7 +18,7 @@ use crate::log_entry_reader_mux::LogEntryReaderMux;
 use crate::result::Result;
 use rev_buf_reader::RevBufReader;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Seek, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use streaming_iterator::StreamingIterator;
@@ -40,13 +41,13 @@ fn run() -> Result<()> {
         .map(|f| File::open(&f).map_err(|e| Error::CannotOpenFile(f.clone(), e)));
 
     if opts.reverse {
-        let readers: Result<Vec<_>> = input_files
+        let readers: Result<_> = input_files
             .map(|f| f.map(|f| RevBufReader::with_capacity(IO_BUF_SIZE, f)))
             .collect();
 
         main_proc(opts, readers?)
     } else {
-        let readers: Result<Vec<_>> = input_files
+        let readers: Result<_> = input_files
             .map(|f| f.map(|f| BufReader::with_capacity(IO_BUF_SIZE, f)))
             .collect();
 
@@ -54,7 +55,7 @@ fn run() -> Result<()> {
     }
 }
 
-fn main_proc(opts: Options, readers: Vec<impl BufRead>) -> Result<()> {
+fn main_proc(opts: Options, readers: Vec<impl BufRead + Seek>) -> Result<()> {
     if let Some(output_file) = &opts.output_file {
         let writer = File::create(output_file)
             .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
@@ -97,12 +98,22 @@ fn main_proc(opts: Options, readers: Vec<impl BufRead>) -> Result<()> {
     }
 }
 
-fn read_log(mut readers: Vec<impl BufRead>, writer: impl Write, opts: Options) -> Result<()> {
+fn read_log(
+    mut readers: Vec<impl BufRead + Seek>,
+    writer: impl Write,
+    opts: Options,
+) -> Result<()> {
+    let eol_seq = if opts.reverse {
+        eol::EOL_REVERSED
+    } else {
+        eol::EOL
+    };
+
     if opts.is_filtering_or_coloring() || readers.len() != 1 {
         let mut entry_iters: Vec<_> = readers
             .into_iter()
             .enumerate()
-            .map(|(i, r)| LogEntryReader::new(r).with_source(i))
+            .map(|(i, r)| LogEntryReader::new(r, eol_seq).with_source(i))
             .map(|reader| filtering_iter(reader, opts.filtering_options.clone()))
             .collect();
 
@@ -152,7 +163,8 @@ fn write_log_fast(
         }
 
         if formatting {
-            ctr_char_is_next = format_special_chars(buf, &mut writer, ctr_char_is_next, b"", b"")?;
+            ctr_char_is_next =
+                format_special_chars(buf, &mut writer, ctr_char_is_next, eol::EOL, b"")?;
         } else {
             writer.write_all(buf)?;
         }
@@ -179,6 +191,8 @@ fn write_log(
     formatting: bool,
     input_files: &[PathBuf],
 ) -> Result<()> {
+    let code_normal_eol = [CODE_NORMAL, eol::EOL].concat();
+
     while let Some(entry) = log_entries.next() {
         if input_files.len() > 1 {
             if color_enabled {
@@ -192,6 +206,12 @@ fn write_log(
 
         let level = if color_enabled { entry.level() } else { None };
 
+        let eol: &[u8] = if color_enabled {
+            &code_normal_eol
+        } else {
+            eol::EOL
+        };
+
         let color_code: &[u8] = match level {
             Some(LogLevel::Debug) => CODE_GRAY,
             Some(LogLevel::Info) => CODE_WHITE,
@@ -204,13 +224,7 @@ fn write_log(
         writer.write_all(color_code)?;
 
         if formatting {
-            format_special_chars(
-                entry.contents(),
-                &mut writer,
-                false,
-                CODE_NORMAL,
-                color_code,
-            )?;
+            format_special_chars(entry.contents(), &mut writer, false, eol, color_code)?;
         } else {
             writer.write_all(entry.contents())?;
         }
@@ -227,6 +241,7 @@ fn write_log(
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use eol;
 
     const LOREM_IPSUM: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed \
 do eiusmod tempor incididunt ut labore et dolore magna aliqua. In eu mi bibendum neque egestas \
@@ -262,7 +277,11 @@ pellentesque id nibh tortor id aliquet. Quam pellentesque nec nam aliquam sem et
 
         write_log_fast(&mut in_buf.as_slice(), &mut out_buf, true)?;
 
-        assert_eq!(out_buf, b"abc\ndef\\ghi");
+        let mut pattern = b"abc".to_vec();
+        pattern.append(&mut eol::EOL.to_vec());
+        pattern.append(&mut b"def\\ghi".to_vec());
+
+        assert_eq!(out_buf, pattern);
 
         Ok(())
     }
