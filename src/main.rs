@@ -1,4 +1,5 @@
 mod cli;
+mod direction;
 mod eol;
 mod error;
 mod filtering;
@@ -7,16 +8,17 @@ mod log_entry;
 mod log_entry_reader;
 mod log_entry_reader_mux;
 mod result;
+mod rev_reader;
 
 use crate::cli::Options;
+use crate::direction::Direction;
 use crate::error::Error;
 use crate::filtering::filtering_iter;
 use crate::formatting::format_special_chars;
 use crate::log_entry::{LogEntry, LogLevel};
-use crate::log_entry_reader::LogEntryReader;
+use crate::log_entry_reader::{LogEntryReader, LogEntryRevReader};
 use crate::log_entry_reader_mux::LogEntryReaderMux;
 use crate::result::Result;
-use rev_buf_reader::RevBufReader;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Seek, Write};
 use std::path::PathBuf;
@@ -40,19 +42,11 @@ fn run() -> Result<()> {
         .iter()
         .map(|f| File::open(&f).map_err(|e| Error::CannotOpenFile(f.clone(), e)));
 
-    if opts.reverse {
-        let readers: Result<_> = input_files
-            .map(|f| f.map(|f| RevBufReader::with_capacity(IO_BUF_SIZE, f)))
-            .collect();
+    let readers: Result<_> = input_files
+        .map(|f| f.map(|f| BufReader::with_capacity(IO_BUF_SIZE, f)))
+        .collect();
 
-        main_proc(opts, readers?)
-    } else {
-        let readers: Result<_> = input_files
-            .map(|f| f.map(|f| BufReader::with_capacity(IO_BUF_SIZE, f)))
-            .collect();
-
-        main_proc(opts, readers?)
-    }
+    main_proc(opts, readers?)
 }
 
 fn main_proc(opts: Options, readers: Vec<impl BufRead + Seek>) -> Result<()> {
@@ -103,38 +97,69 @@ fn read_log(
     writer: impl Write,
     opts: Options,
 ) -> Result<()> {
-    let eol_seq = if opts.reverse {
-        eol::EOL_REVERSED
-    } else {
-        eol::EOL
-    };
+    if opts.is_filtering_or_coloring() || readers.len() != 1 || opts.reverse {
+        if opts.reverse {
+            let mut entry_iters: Vec<_> = readers
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let reader = LogEntryRevReader::with_capacity(r, eol::EOL, IO_BUF_SIZE)?;
+                    Ok(filtering_iter(
+                        reader.with_source(i),
+                        opts.filtering_options.clone(),
+                        Direction::Reverse,
+                    ))
+                })
+                .collect::<Result<_>>()?;
 
-    if opts.is_filtering_or_coloring() || readers.len() != 1 {
-        let mut entry_iters: Vec<_> = readers
-            .into_iter()
-            .enumerate()
-            .map(|(i, r)| LogEntryReader::new(r, eol_seq).with_source(i))
-            .map(|reader| filtering_iter(reader, opts.filtering_options.clone()))
-            .collect();
-
-        if entry_iters.len() == 1 {
-            let entry_iter = entry_iters.pop().expect("No elements");
-            write_log(
-                entry_iter,
-                writer,
-                opts.color_enabled,
-                opts.formatting_enabled,
-                &opts.input_files,
-            )
+            if entry_iters.len() == 1 {
+                let entry_iter = entry_iters.pop().expect("No elements");
+                write_log(
+                    entry_iter,
+                    writer,
+                    opts.color_enabled,
+                    opts.formatting_enabled,
+                    &opts.input_files,
+                )
+            } else {
+                let reader = LogEntryReaderMux::new(entry_iters, Direction::Reverse);
+                write_log(
+                    reader,
+                    writer,
+                    opts.color_enabled,
+                    opts.formatting_enabled,
+                    &opts.input_files,
+                )
+            }
         } else {
-            let reader = LogEntryReaderMux::new(entry_iters);
-            write_log(
-                reader,
-                writer,
-                opts.color_enabled,
-                opts.formatting_enabled,
-                &opts.input_files,
-            )
+            let mut entry_iters: Vec<_> = readers
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| LogEntryReader::new(r, eol::EOL).with_source(i))
+                .map(|reader| {
+                    filtering_iter(reader, opts.filtering_options.clone(), Direction::Forward)
+                })
+                .collect();
+
+            if entry_iters.len() == 1 {
+                let entry_iter = entry_iters.pop().expect("No elements");
+                write_log(
+                    entry_iter,
+                    writer,
+                    opts.color_enabled,
+                    opts.formatting_enabled,
+                    &opts.input_files,
+                )
+            } else {
+                let reader = LogEntryReaderMux::new(entry_iters, Direction::Forward);
+                write_log(
+                    reader,
+                    writer,
+                    opts.color_enabled,
+                    opts.formatting_enabled,
+                    &opts.input_files,
+                )
+            }
         }
     } else {
         let reader = readers.pop().expect("No elements");

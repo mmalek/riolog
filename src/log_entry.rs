@@ -16,7 +16,7 @@ enum Cache<T> {
     Filled(T),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LogEntry {
     contents: Vec<u8>,
     level: Cell<Cache<Option<LogLevel>>>,
@@ -105,6 +105,12 @@ impl LogEntry {
 
     pub fn source(&self) -> usize {
         self.source
+    }
+}
+
+impl PartialEq<&[u8]> for LogEntry {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.contents.eq(other)
     }
 }
 
