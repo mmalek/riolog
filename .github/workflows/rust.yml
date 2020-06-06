@@ -19,12 +19,6 @@ jobs:
       with:
           toolchain: stable
 
-    - name: Check formatting
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check
-
     - name: Build
       uses: actions-rs/cargo@v1
       with:
