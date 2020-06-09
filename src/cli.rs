@@ -5,7 +5,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use clap::{App, Arg};
 use std::path::PathBuf;
 
-const ARG_FILE_NAMES: &str = "file-names";
+const ARG_FILE_NAMES: &str = "FILE";
 const ARG_COLOR: &str = "color";
 const ARG_FORMATTING: &str = "formatting";
 const ARG_PAGER: &str = "pager";
@@ -46,10 +46,9 @@ impl Options {
             .about("RIO log filter & viewer")
             .arg(
                 Arg::with_name(ARG_FILE_NAMES)
-                    .help("path to a log file(s)")
+                    .help("path to a log file(s). With no FILE, or when FILE is -, read standard input")
                     .index(1)
-                    .multiple(true)
-                    .required(true),
+                    .multiple(true),
             )
             .arg(Arg::with_name(ARG_COLOR)
                 .long(ARG_COLOR)
@@ -142,9 +141,8 @@ impl Options {
 
         let input_files = matches
             .values_of_os(ARG_FILE_NAMES)
-            .expect("missing \"file-name\" parameter")
-            .map(PathBuf::from)
-            .collect();
+            .map(|os_values| os_values.map(PathBuf::from).collect())
+            .unwrap_or_else(Vec::new);
 
         let filtering_options = FilteringOptions {
             since,

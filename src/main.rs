@@ -20,8 +20,8 @@ use crate::log_entry_reader::{LogEntryReader, LogEntryRevReader};
 use crate::log_entry_reader_mux::LogEntryReaderMux;
 use crate::result::Result;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Seek, Write};
-use std::path::PathBuf;
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use streaming_iterator::StreamingIterator;
 
@@ -37,24 +37,11 @@ fn main() {
 fn run() -> Result<()> {
     let opts = Options::read()?;
 
-    let input_files = opts
-        .input_files
-        .iter()
-        .map(|f| File::open(&f).map_err(|e| Error::CannotOpenFile(f.clone(), e)));
-
-    let readers: Result<_> = input_files
-        .map(|f| f.map(|f| BufReader::with_capacity(IO_BUF_SIZE, f)))
-        .collect();
-
-    main_proc(opts, readers?)
-}
-
-fn main_proc(opts: Options, readers: Vec<impl BufRead + Seek>) -> Result<()> {
     if let Some(output_file) = &opts.output_file {
         let writer = File::create(output_file)
             .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
             .map_err(|e| Error::CannotCreateFile(output_file.clone(), e))?;
-        read_log(readers, writer, opts)
+        read_log(writer, opts)
     } else if opts.pager {
         let mut less_command = Command::new("less");
         less_command.arg("--quit-if-one-screen");
@@ -78,7 +65,7 @@ fn main_proc(opts: Options, readers: Vec<impl BufRead + Seek>) -> Result<()> {
             .map(|w| BufWriter::with_capacity(IO_BUF_SIZE, w))
             .ok_or(Error::CannotUseLessStdin)?;
 
-        let res = read_log(readers, writer, opts);
+        let res = read_log(writer, opts);
 
         ignore_broken_pipe(res)?;
 
@@ -88,16 +75,38 @@ fn main_proc(opts: Options, readers: Vec<impl BufRead + Seek>) -> Result<()> {
     } else {
         let stdout = std::io::stdout();
         let writer = BufWriter::with_capacity(IO_BUF_SIZE, stdout.lock());
-        ignore_broken_pipe(read_log(readers, writer, opts))
+        ignore_broken_pipe(read_log(writer, opts))
     }
 }
 
-fn read_log(
-    mut readers: Vec<impl BufRead + Seek>,
-    writer: impl Write,
-    opts: Options,
-) -> Result<()> {
-    if opts.is_filtering_or_coloring() || readers.len() != 1 || opts.reverse {
+fn read_log(writer: impl Write, opts: Options) -> Result<()> {
+    if opts.input_files.is_empty()
+        || (opts.input_files.len() == 1 && opts.input_files[0] == Path::new("-"))
+    {
+        let stdin = io::stdin();
+        if opts.is_filtering_or_coloring() {
+            let reader = LogEntryReader::new(stdin.lock(), eol::EOL);
+            let reader = filtering_iter(reader, opts.filtering_options.clone(), Direction::Forward);
+            write_log(
+                reader,
+                writer,
+                opts.color_enabled,
+                opts.formatting_enabled,
+                &opts.input_files,
+            )
+        } else {
+            write_log_fast(stdin.lock(), writer, opts.formatting_enabled)
+        }
+    } else if opts.is_filtering_or_coloring() || opts.input_files.len() > 1 || opts.reverse {
+        let readers: Result<Vec<_>> = opts
+            .input_files
+            .iter()
+            .map(|f| File::open(&f).map_err(|e| Error::CannotOpenFile(f.clone(), e)))
+            .map(|f| f.map(|f| BufReader::with_capacity(IO_BUF_SIZE, f)))
+            .collect();
+
+        let readers = readers?;
+
         if opts.reverse {
             let mut entry_iters: Vec<_> = readers
                 .into_iter()
@@ -162,7 +171,9 @@ fn read_log(
             }
         }
     } else {
-        let reader = readers.pop().expect("No elements");
+        let file = opts.input_files.first().expect("No elements");
+        let file = File::open(&file).map_err(|e| Error::CannotOpenFile(file.clone(), e))?;
+        let reader = BufReader::with_capacity(IO_BUF_SIZE, file);
         write_log_fast(reader, writer, opts.formatting_enabled)
     }
 }
