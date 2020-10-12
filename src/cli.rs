@@ -2,7 +2,7 @@ use crate::error::Error::InvalidCliOptionValue;
 use crate::log_entry::LogLevel;
 use crate::result::Result;
 use chrono::{NaiveDate, NaiveDateTime};
-use clap::{App, Arg};
+use clap::{App, Arg, crate_version};
 use std::path::PathBuf;
 
 const ARG_FILE_NAMES: &str = "FILE";
@@ -42,7 +42,7 @@ pub struct FilteringOptions {
 impl Options {
     pub fn read() -> Result<Self> {
         let matches = App::new("riolog")
-            .version("1.0")
+            .version(crate_version!())
             .about("RIO log filter & viewer")
             .arg(
                 Arg::with_name(ARG_FILE_NAMES)
